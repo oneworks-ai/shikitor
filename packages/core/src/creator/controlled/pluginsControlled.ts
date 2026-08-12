@@ -1,131 +1,88 @@
-import { derive } from 'valtio/utils'
-import { snapshot, subscribe } from 'valtio/vanilla'
+import type { Context, Fiber } from 'cordis'
+import { subscribe } from 'valtio/vanilla'
 
 import type { RefObject } from '../../base'
-import type { IDisposable, Shikitor, ShikitorSupportPlugin } from '../../editor'
-import type { ShikitorPlugin } from '../../plugin'
-import type { PickByValue } from '../../types'
-import { diffArray } from '../../utils' with { 'unbundled-reexport': 'on' }
-import { isSameSnapshot } from '../../utils/valtio/isSameSnapshot'
+import type { ShikitorSupportPlugin } from '../../editor'
+import type { InputShikitorPlugin, ShikitorPlugin } from '../../plugin'
+
+function installPlugin(context: Context, input: InputShikitorPlugin) {
+  if (Array.isArray(input)) {
+    return context.plugin(input[0], input[1])
+  }
+  return context.plugin(input as ShikitorPlugin)
+}
 
 export function pluginsControlled(
-  ref: RefObject<{ plugins: ShikitorPlugin[] }>,
-  ee: Shikitor['ee']
+  ref: RefObject<{ plugins?: InputShikitorPlugin[] }>,
+  context: Context
 ) {
-  let shikitor: Shikitor | undefined
-  let pluginsDisposables: (void | IDisposable)[] = []
-  const pluginsRef = derive({
-    current: get => get(ref).current.plugins
-  })
-  function callAllShikitorPlugins<
-    K extends Exclude<keyof PickByValue<ShikitorPlugin, (...args: any[]) => any>, undefined>
-  >(method: K, ...args: Parameters<Exclude<ShikitorPlugin[K], undefined>>) {
-    const plugins = pluginsRef.current
-    return plugins.map(plugin => {
-      let funcRT = plugin[method]?.call(
-        shikitor,
-        // @ts-ignore
-        ...args
-      )
-      if (['install', 'onDispose'].includes(method)) {
-        funcRT = Promise.resolve(funcRT)
-          .then(rt => {
-            const eventName = {
-              install: 'install',
-              onDispose: 'dispose'
-            }[method as 'install' | 'onDispose']
-            ee.emit(eventName, plugin.name, shikitor)
-            return rt
-          })
-      }
-      return funcRT
-    })
-  }
-  let prevPluginSnapshots = snapshot(pluginsRef).current
-  const dispose = subscribe(pluginsRef, async () => {
-    if (!shikitor) {
-      throw new Error('Shikitor instance is not provided')
-    }
-    const pluginSnapshots = snapshot(pluginsRef).current
-    if (prevPluginSnapshots === pluginSnapshots) {
-      return
-    }
-    const { added, reordered, removed } = diffArray(prevPluginSnapshots, pluginSnapshots, isSameSnapshot)
-    for (const plugin of removed) {
-      const index = prevPluginSnapshots.indexOf(plugin)
-      if (index === -1) return
-      pluginsDisposables[index]?.dispose?.()
-      plugin.onDispose?.call(shikitor)
-      ee.emit('dispose', plugin.name)
-    }
-    for (const plugin of removed) {
-      const index = prevPluginSnapshots.indexOf(plugin)
-      if (index === -1) return
-      pluginsDisposables.splice(index, 1)
-    }
-    for (const [oldI, newI] of reordered) {
-      const temp = pluginsDisposables[oldI]
-      pluginsDisposables[oldI] = pluginsDisposables[newI]
-      pluginsDisposables[newI] = temp
-    }
-    await Promise.all(
-      added.map(async ([plugin, index]) => {
-        if (!shikitor) {
-          throw new Error('Shikitor instance is not provided')
-        }
+  let pluginFibers: Fiber[] = []
+  let disposed = false
+  let pending = Promise.resolve()
+  let installedPlugins: InputShikitorPlugin[] | undefined
 
-        const dispose = await plugin.install?.call(shikitor, shikitor)
-        ee.emit('install', plugin.name, shikitor)
-        if (index < pluginsDisposables.length) {
-          pluginsDisposables.splice(index, 0, dispose)
-        } else if (index === pluginsDisposables.length) {
-          pluginsDisposables.push(dispose)
-        } else {
-          pluginsDisposables[index] = dispose
-        }
-      })
-    )
-    prevPluginSnapshots = pluginSnapshots
-  })
+  async function disposePlugins() {
+    const fibers = pluginFibers.splice(0).reverse()
+    await Promise.all(fibers.map(fiber => fiber.dispose()))
+  }
+
+  async function reconcile(inputs: InputShikitorPlugin[]) {
+    if (disposed) return
+    await disposePlugins()
+    for (const input of inputs) {
+      const fiber = installPlugin(context, input)
+      pluginFibers.push(fiber)
+      await fiber.await()
+    }
+  }
+
+  function scheduleReconcile(force = false) {
+    const inputs = [...ref.current.plugins ?? []]
+    if (
+      !force
+      && installedPlugins?.length === inputs.length
+      && installedPlugins.every((plugin, index) => plugin === inputs[index])
+    ) return pending
+    installedPlugins = inputs
+    pending = pending
+      .catch(() => void 0)
+      .then(() => reconcile(inputs))
+    return pending
+  }
+
+  const unsubscribe = subscribe(ref, () => scheduleReconcile())
+
   return {
     dispose() {
-      dispose()
-      pluginsDisposables
-        .filter(<T>(x: T | void): x is T => x !== undefined)
-        .forEach(({ dispose }) => dispose?.())
+      disposed = true
+      unsubscribe()
+      void disposePlugins()
     },
-    async install(instance: Shikitor) {
-      shikitor = instance
-      pluginsDisposables = await Promise.all(
-        callAllShikitorPlugins('install', shikitor)
-      )
-    },
-    callAllShikitorPlugins,
+    install: () => scheduleReconcile(true),
     shikitorSupportPlugin: <ShikitorSupportPlugin> {
+      context,
       async upsertPlugin(plugin, index) {
-        const p = await Promise.resolve(typeof plugin === 'function' ? plugin() : plugin)
-        if (p === undefined) {
-          throw new Error('Not provided plugin')
-        }
-        const plugins = pluginsRef.current
-        const realIndex = index ?? plugins.length - 1
-        if (realIndex < 0 || realIndex >= plugins.length) {
-          throw new Error('Invalid index')
-        }
+        const plugins = ref.current.plugins ??= []
         if (index === undefined) {
-          plugins?.push(p)
-        } else {
-          plugins?.splice(index, 1, p)
+          const nextIndex = plugins.length
+          plugins.push(plugin)
+          await scheduleReconcile()
+          return nextIndex
         }
-        return realIndex
+        if (index < 0 || index >= plugins.length) {
+          throw new Error(`Invalid plugin index: ${index}`)
+        }
+        plugins.splice(index, 1, plugin)
+        await scheduleReconcile()
+        return index
       },
       async removePlugin(index) {
-        const plugins = pluginsRef.current
-        const p = plugins[index]
-        if (p === undefined) {
-          throw new Error(`Not found plugin at index ${index}`)
+        const plugins = ref.current.plugins ??= []
+        if (index < 0 || index >= plugins.length) {
+          throw new Error(`Plugin not found at index ${index}`)
         }
-        plugins?.splice(index, 1)
+        plugins.splice(index, 1)
+        await scheduleReconcile()
       }
     }
   }

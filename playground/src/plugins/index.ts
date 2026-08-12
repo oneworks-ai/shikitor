@@ -1,4 +1,4 @@
-import type { ShikitorPlugin } from '@shikitor/core'
+import type { InputShikitorPlugin } from '@shikitor/core'
 import type { ModuleNamespace } from 'vite/types/hot.d.ts'
 
 const bundledPluginModules = import.meta.glob([
@@ -9,7 +9,7 @@ const bundledPluginModules = import.meta.glob([
 ], {
   eager: true
 }) as Record<string, {
-  default: ShikitorPlugin | (() => ShikitorPlugin)
+  default: InputShikitorPlugin
 }>
 
 function getId(path: string) {
@@ -39,11 +39,11 @@ if (import.meta.hot) {
   })
 }
 
-export function onPluginChange(lis: (index: number, id: string, module: ShikitorPlugin) => void) {
+export function onPluginChange(lis: (index: number, id: string, module: InputShikitorPlugin) => void) {
   const listener: Listener = (mods, paths = []) => {
     for (const [index, mod] of mods.entries()) {
       if (!mod) continue
-      const d = mod.default as ShikitorPlugin
+      const d = mod.default as InputShikitorPlugin
       if (!d) {
         console.warn('Plugin file must export a default value, skipping', paths[index])
         continue

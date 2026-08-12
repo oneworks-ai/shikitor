@@ -13,32 +13,32 @@ export interface OnHoverElementContext {
   raw: string
 }
 
-declare module '@shikitor/core' {
-  interface ShikitorProvideMouse {
-    registerMouseProvider(provider: {}): IDisposable
+export interface ShikitorMouseService {
+  registerMouseProvider(provider: {}): IDisposable
+}
+
+declare module 'cordis' {
+  interface Context {
+    shikitorMouse: ShikitorMouseService
   }
-  interface ShikitorExtends {
-    'provide-mouse': ShikitorProvideMouse
-  }
-  interface ShikitorEventMap {
-    hover(range: ResolvedTextRange, context: OnHoverElementContext): Awaitable<void>
+  interface Events {
+    'shikitor/hover'(range: ResolvedTextRange, context: OnHoverElementContext): Awaitable<void>
   }
 }
 
-export default () =>
-  definePlugin({
-    name,
-    install: shikitor => {
-      const input = shikitor.element.querySelector(
-        `:scope > .${'shikitor'}-container > .${'shikitor'}-input`
-      ) as HTMLTextAreaElement
-      const output = shikitor.element.querySelector(
-        `:scope > .${'shikitor'}-container > .${'shikitor'}-output`
-      ) as HTMLElement
-      let prevOutputHoverElement: Element | null = null
-      input.addEventListener(
-        'mousemove',
-        throttle(e => {
+export default definePlugin({
+  name,
+  inject: ['shikitor'],
+  apply(ctx) {
+    const shikitor = ctx.shikitor
+    const input = shikitor.element.querySelector(
+      `:scope > .${'shikitor'}-container > .${'shikitor'}-input`
+    ) as HTMLTextAreaElement
+    const output = shikitor.element.querySelector(
+      `:scope > .${'shikitor'}-container > .${'shikitor'}-output`
+    ) as HTMLElement
+    let prevOutputHoverElement: Element | null = null
+    const onMousemove = throttle(e => {
           input.style.pointerEvents = 'none'
           output.style.pointerEvents = 'auto'
           const outputHoverElement = document.elementFromPoint(e.clientX, e.clientY)
@@ -81,7 +81,7 @@ export default () =>
             return
           }
 
-          shikitor.ee.emit('hover', {
+          ctx.emit('shikitor/hover', {
             start: { offset, line, character: start },
             end: { offset, line, character: end }
           }, {
@@ -89,13 +89,14 @@ export default () =>
             element: outputHoverElement,
             raw: input.value
           })
-        }, 50)
-      )
-      return shikitor.extend('provide-mouse', {
-        registerMouseProvider() {
-          // TODO
-          return {}
-        }
-      })
-    }
-  })
+    }, 50)
+    input.addEventListener('mousemove', onMousemove)
+    ctx.provide('shikitorMouse', {
+      registerMouseProvider() {
+        // TODO
+        return {}
+      }
+    })
+    return () => input.removeEventListener('mousemove', onMousemove)
+  }
+})

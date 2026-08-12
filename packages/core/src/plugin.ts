@@ -1,23 +1,13 @@
-import type { ResolvedPosition } from '@shikijs/core'
+import type { Plugin as CordisPlugin } from 'cordis'
 
-import type { _KeyboardEvent } from './base'
-import type { IDisposable, Shikitor } from './editor'
-import type { Awaitable } from './types'
+export type ShikitorPlugin<Config = any> = CordisPlugin<Config>
 
-interface Keyboards {
-  onKeyup?: (this: Shikitor, e: _KeyboardEvent) => void
-  onKeydown?: (this: Shikitor, e: _KeyboardEvent) => void
-  onKeypress?: (this: Shikitor, e: _KeyboardEvent) => void
-}
+export type InputShikitorPlugin =
+  | ShikitorPlugin
+  | readonly [plugin: ShikitorPlugin, config: unknown]
 
-export interface ShikitorPlugin extends Keyboards {
-  name?: string
-  install?: (this: Shikitor, editor: Shikitor) => Awaitable<void | IDisposable>
-  onChange?: (this: Shikitor, value: string) => void
-  onDispose?: (this: Shikitor) => void
-  onCursorChange?: (this: Shikitor, cursor?: ResolvedPosition) => void
-}
-
-export function definePlugin(plugin: ShikitorPlugin) {
+export function definePlugin<Config>(plugin: CordisPlugin.Object<Config>): CordisPlugin.Object<Config>
+export function definePlugin<Config>(plugin: ShikitorPlugin<Config>): ShikitorPlugin<Config>
+export function definePlugin<Config>(plugin: ShikitorPlugin<Config>) {
   return plugin
 }

@@ -79,8 +79,11 @@ declare module '@shikitor/core' {
   export interface ShikitorProvideCompletions {
     registerCompletionItemProvider: (selector: LanguageSelector, provider: CompletionItemProvider) => IDisposable
   }
-  interface ShikitorExtends {
-    'provide-completions': ShikitorProvideCompletions
+}
+
+declare module 'cordis' {
+  interface Context {
+    shikitorCompletions: import('@shikitor/core').ShikitorProvideCompletions
   }
 }
 
@@ -151,7 +154,10 @@ export interface ProvideCompletionsOptions {
    */
   groups?: Record<string, ProvideCompletionsOptions>
 }
-export default (options: ProvideCompletionsOptions = {}) => {
+export default definePlugin({
+  name,
+  inject: ['shikitor', 'shikitorPopup'],
+  apply(ctx, options: ProvideCompletionsOptions = {}) {
   const {
     selectMode = 'once',
     popupPlacement = 'bottom'
@@ -300,125 +306,103 @@ export default (options: ProvideCompletionsOptions = {}) => {
     }
     return false
   }
-  return definePlugin({
-    name,
-    onDispose() {
-      disposeScoped()
-    },
-    async install() {
-      const installedDefer = Promise.withResolvers<void>()
-      const dependDispose = this.depend(['provide-popup'], shikitor => {
-        const { optionsRef } = shikitor
-        const cursorRef = derive({
-          current: get => get(optionsRef).current.cursor
-        })
-        const languageRef = derive({
-          current: get => get(optionsRef).current.language
-        })
-        const { disposeScoped, scopeWatch } = scoped()
-        const extendDisposable = this.extend(name, {
-          registerCompletionItemProvider(selector, provider) {
-            let providerDispose: (() => void) | undefined
-            const { triggerCharacters, provideCompletionItems } = provider
+      const shikitor = ctx.shikitor
+      const { optionsRef } = shikitor
+      const cursorRef = derive({
+        current: get => get(optionsRef).current.cursor
+      })
+      const languageRef = derive({
+        current: get => get(optionsRef).current.language
+      })
+      const { disposeScoped: disposeProviderScope, scopeWatch } = scoped()
+      ctx.provide('shikitorCompletions', {
+        registerCompletionItemProvider(selector, provider) {
+          let providerDispose: (() => void) | undefined
+          const { triggerCharacters, provideCompletionItems } = provider
 
-            const completionSymbol = Symbol('completion')
-            const start = allTriggerCharacters.length
-            const end = allTriggerCharacters.push(...triggerCharacters ?? [])
-            scopeWatch(async get => {
-              const char = get(triggerCharacter).current
-              const language = get(languageRef).current
-              if (selector !== '*' && selector !== language) return
+          const completionSymbol = Symbol('completion')
+          const start = allTriggerCharacters.length
+          const end = allTriggerCharacters.push(...triggerCharacters ?? [])
+          const disposeWatcher = scopeWatch(async get => {
+            const char = get(triggerCharacter).current
+            const language = get(languageRef).current
+            if (selector !== '*' && selector !== language) return
 
-              const cursor = cursorRef.current
-              if (cursor === undefined) return
-              let suggestions: CompletionItemInner[] = []
-              if (char && triggerCharacters?.includes(char)) {
-                const { rawTextHelper } = shikitor
-                providerDispose?.()
-                const { suggestions: newSugs = [], dispose } = await provideCompletionItems(
-                  rawTextHelper,
-                  cursor
-                ) ?? {}
-                suggestions = newSugs
-                providerDispose = dispose
-              }
-
-              const oldCompletionsIndexes = completions
-                .reduce((indexes, completion, index) => {
-                  // @ts-expect-error
-                  return completion[completionSymbol]
-                    ? [...indexes, index]
-                    : indexes
-                }, [] as number[])
-              const removedCompletions = completions
-                .filter((_, index) => !oldCompletionsIndexes.includes(index))
-              completions.length = 0
-              completions.push(
-                ...removedCompletions,
-                ...suggestions.map(suggestion => ({
-                  ...suggestion,
-                  [completionSymbol]: true
-                }))
-              )
-            })
-            return {
-              dispose() {
-                providerDispose?.()
-                allTriggerCharacters.splice(start, end - start)
-              }
+            const cursor = cursorRef.current
+            if (cursor === undefined) return
+            let suggestions: CompletionItemInner[] = []
+            if (char && triggerCharacters?.includes(char)) {
+              const { rawTextHelper } = shikitor
+              providerDispose?.()
+              const { suggestions: newSugs = [], dispose } = await provideCompletionItems(
+                rawTextHelper,
+                cursor
+              ) ?? {}
+              suggestions = newSugs
+              providerDispose = dispose
             }
-          }
-        })
-        const popupProviderDisposable = shikitor.registerPopupProvider({
-          position: 'relative',
-          placement: popupPlacement,
-          target: 'cursor',
-          providePopups() {
-            return {
-              dispose() {
-                if (triggerCharacter.current === undefined) {
-                  completions.length = 0
-                }
-              },
-              popups: [{
-                id: 'completions-board',
-                render: ele => {
-                  elementRef.current = ref(ele)
-                  ele.addEventListener('click', e => {
-                    if (!(e.target instanceof HTMLElement)) return
-                    const item = e.target.closest(`.${completionItemTemplate.prefix}`) as HTMLDivElement
-                    if (!item) return
 
-                    const index = parseInt(item.dataset.index ?? '')
-                    if (Number.isInteger(index)) {
-                      selectIndexRef.current = index
-                    }
-                    let accept = selectMode === 'once'
-                    accept ||= selectMode === 'need-confirm' && item.classList.contains('selected')
-                    if (accept) acceptCompletion(shikitor)
-                  })
-                }
-              }]
+            const oldCompletionsIndexes = completions
+              .reduce((indexes, completion, index) => {
+                // @ts-expect-error
+                return completion[completionSymbol]
+                  ? [...indexes, index]
+                  : indexes
+              }, [] as number[])
+            const removedCompletions = completions
+              .filter((_, index) => !oldCompletionsIndexes.includes(index))
+            completions.length = 0
+            completions.push(
+              ...removedCompletions,
+              ...suggestions.map(suggestion => ({
+                ...suggestion,
+                [completionSymbol]: true
+              }))
+            )
+          })
+          return {
+            dispose() {
+              disposeWatcher()
+              providerDispose?.()
+              allTriggerCharacters.splice(start, end - start)
             }
-          }
-        })
-        installedDefer.resolve()
-        return {
-          dispose() {
-            extendDisposable.dispose?.()
-            popupProviderDisposable.dispose?.()
-            disposeScoped()
           }
         }
       })
-      await installedDefer.promise
-      return {
-        dispose() {
-          dependDispose.dispose?.()
+      const popupProviderDisposable = ctx.shikitorPopup.registerPopupProvider({
+        position: 'relative',
+        placement: popupPlacement,
+        target: 'cursor',
+        providePopups() {
+          return {
+            dispose() {
+              if (triggerCharacter.current === undefined) {
+                completions.length = 0
+              }
+            },
+            popups: [{
+              id: 'completions-board',
+              render: ele => {
+                elementRef.current = ref(ele)
+                ele.addEventListener('click', e => {
+                  if (!(e.target instanceof HTMLElement)) return
+                  const item = e.target.closest(`.${completionItemTemplate.prefix}`) as HTMLDivElement
+                  if (!item) return
+
+                  const index = parseInt(item.dataset.index ?? '')
+                  if (Number.isInteger(index)) {
+                    selectIndexRef.current = index
+                  }
+                  let accept = selectMode === 'once'
+                  accept ||= selectMode === 'need-confirm' && item.classList.contains('selected')
+                  if (accept) acceptCompletion(shikitor)
+                })
+              }
+            }]
+          }
         }
-      }
-    },
-    onKeydown(e) {
+      })
+      ctx.on('shikitor/keydown', e => {
       if (!isMultipleKey(e) && e.key === 'Escape') {
         resetTriggerCharacter()
 
@@ -440,18 +424,18 @@ export default (options: ProvideCompletionsOptions = {}) => {
             : deltaedIndex % completions.length
           return
         }
-        if (e.key === 'Enter' && acceptCompletion(this)) return
+        if (e.key === 'Enter' && acceptCompletion(shikitor)) return
         return
       }
       if (!isMultipleKey(e, false)) {
         if (allTriggerCharacters.includes(e.key)) {
           keywordRef.current = ''
           triggerCharacter.current = e.key
-          triggerCharacter.offset = this.cursor.offset + 1
+          triggerCharacter.offset = shikitor.cursor.offset + 1
           return
         }
         if (triggerCharacter.current) {
-          const { rawTextHelper: { value }, cursor: { offset } } = this
+          const { rawTextHelper: { value }, cursor: { offset } } = shikitor
           const nextChar = value[offset + 1]
           try {
             const keyword = keywordRef.current === -1
@@ -468,9 +452,14 @@ export default (options: ProvideCompletionsOptions = {}) => {
           resetTriggerCharacter()
         }
       }
-    }
-  })
-}
+      })
+      return () => {
+        popupProviderDisposable.dispose?.()
+        disposeProviderScope()
+        disposeScoped()
+      }
+  }
+})
 
 const CalcExitError = Symbol('CalcExitError')
 function calcNewKeyword(keyword: string, key: string, nextChar = '') {

@@ -10,7 +10,10 @@ export const usePlugins = (shikitorRef: RefObject<Shikitor>) => {
       const shikitor = shikitorRef.current
       if (!shikitor) return
 
-      const findIndex = shikitor.options.plugins.findIndex(p => p.name === id)
+      const findIndex = shikitor.options.plugins.findIndex(input => {
+        const plugin = Array.isArray(input) ? input[0] : input
+        return plugin.name === id
+      })
       shikitor
         .upsertPlugin(module, findIndex === -1 ? undefined : findIndex)
         .then(() => {

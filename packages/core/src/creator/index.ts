@@ -1,22 +1,20 @@
 import './index.scss'
 
+import { Context } from 'cordis'
 import { derive } from 'valtio/utils'
 import { proxy, snapshot } from 'valtio/vanilla'
 
 import type { _KeyboardEvent } from '../base'
 import type { ResolvedSelection, Shikitor, ShikitorBase, ShikitorInternal, ShikitorOptions } from '../editor'
-import { EventEmitter } from '../editor/base.eventEmitter'
 import { callUpdateDispatcher, completeAssign, listen } from '../utils' with {
   'unbundled-reexport': 'on'
 }
 import { calcTextareaHeight } from '../utils/calcTextareaHeight'
 import { scoped } from '../utils/valtio/scoped'
 import { cursorControlled } from './controlled/cursorControlled'
-import { extendControlled } from './controlled/extendControlled'
 import { initDom, outputRenderControlled } from './controlled/outputRenderControlled'
 import { pluginsControlled } from './controlled/pluginsControlled'
 import { valueControlled } from './controlled/valueControlled'
-import { resolveInputPlugins } from './resolveInputPlugins'
 
 export interface CreateOptions {
   abort?: AbortSignal
@@ -28,7 +26,7 @@ export async function create(
   options: CreateOptions = {}
 ): Promise<Shikitor> {
   let shikitor: Shikitor | undefined = undefined
-  const ee = new EventEmitter()
+  const context = new Context()
   const {
     onChange,
     onCursorChange,
@@ -45,15 +43,16 @@ export async function create(
 
   const disposes: (() => void)[] = []
   const { disposeScoped, scopeWatch } = scoped()
+  let disposed = false
 
   const dispose = () => {
+    if (disposed) return
+    disposed = true
+    context.emit('shikitor/dispose')
     disposeScoped()
     disposes.forEach(dispose => dispose())
     onDispose?.()
-    try {
-      // plugins may not installed
-      callAllShikitorPlugins('onDispose')
-    } catch { /* empty */ }
+    void context.fiber.dispose()
   }
   const checkAborted = () => {
     if (abort?.aborted) {
@@ -69,7 +68,7 @@ export async function create(
   const optionsRef = proxy({
     current: {
       ...inputOptions,
-      plugins: await resolveInputPlugins(inputOptions.plugins)
+      plugins: inputOptions.plugins ?? []
     }
   })
   checkAborted()
@@ -80,8 +79,7 @@ export async function create(
     rawTextHelperRef
   } = valueControlled(input, optionsRef, value => {
     onChange?.(value)
-    ee.emit('change', value)
-    callAllShikitorPlugins('onChange', value)
+    context.emit('shikitor/change', value)
   })
   disposes.push(disposeValueControlled)
   const {
@@ -94,20 +92,16 @@ export async function create(
     optionsRef,
     cursor => {
       onCursorChange?.(cursor)
-      callAllShikitorPlugins('onCursorChange', cursor)
+      context.emit('shikitor/cursor-change', cursor)
     }
   )
   disposes.push(disposeCursorControlled)
   const {
     dispose: disposePluginsControlled,
     install: installAllPlugins,
-    shikitorSupportPlugin,
-    callAllShikitorPlugins
-  } = pluginsControlled(optionsRef, ee)
+    shikitorSupportPlugin
+  } = pluginsControlled(optionsRef, context)
   disposes.push(disposePluginsControlled)
-  const {
-    shikitorSupportExtend
-  } = extendControlled(ee)
 
   const autoSizeRef = derive({
     minRows: get => {
@@ -193,7 +187,6 @@ export async function create(
   ))
 
   const shikitorInternal: ShikitorInternal = {
-    ee,
     _getCursorAbsolutePosition(cursor, lineOffset = 0): { x: number; y: number } {
       const { rawTextHelper: { line } } = this
       const span = document.createElement('span')
@@ -253,7 +246,7 @@ export async function create(
       return optionsRef
     },
     get options() {
-      return snapshot(optionsRef).current
+      return snapshot(optionsRef).current as Shikitor['options']
     },
     set options(newOptions) {
       this.updateOptions(newOptions)
@@ -271,7 +264,7 @@ export async function create(
       optionsRef.current = {
         ...resolvedOptions,
         cursor: newCursor,
-        plugins: await resolveInputPlugins(plugins ?? [])
+        plugins: [...plugins ?? []]
       }
     },
     get language() {
@@ -337,9 +330,6 @@ export async function create(
           prevResolvedPrevSelection.end.offset !== resolvedSelection.end.offset
         ].some(Boolean)
       ) {
-        // TODO
-        // options.onSelectionChange?.(selection)
-        // callAllShikitorPlugins('onSelectionChange', selection)
         selections[index] = resolvedSelection
       }
       input.setSelectionRange(resolvedSelection.start.offset, resolvedSelection.end.offset)
@@ -370,26 +360,34 @@ export async function create(
   )
   shikitor = completeAssign(
     baseWithInternal,
-    completeAssign(shikitorSupportExtend, shikitorSupportPlugin)
+    shikitorSupportPlugin
   )
-  await installAllPlugins(shikitor)
+  context.provide('shikitor', shikitor)
+  await installAllPlugins()
   checkAborted()
 
   scopeWatch(get => {
     const selections = get(selectionsRef).current
     onSelectionChange?.(selections)
+    context.emit('shikitor/selection-change', selections)
   })
-  input.addEventListener('focus', () => onFocused?.())
-  input.addEventListener('blur', () => onBlurred?.())
+  input.addEventListener('focus', () => {
+    context.emit('shikitor/focus')
+    onFocused?.()
+  })
+  input.addEventListener('blur', () => {
+    context.emit('shikitor/blur')
+    onBlurred?.()
+  })
   input.addEventListener('keydown', e => {
-    callAllShikitorPlugins('onKeydown', e as _KeyboardEvent)
+    context.emit('shikitor/keydown', e as _KeyboardEvent)
     onKeydown?.(e as _KeyboardEvent)
   })
   input.addEventListener('keyup', e => {
-    callAllShikitorPlugins('onKeyup', e as _KeyboardEvent)
+    context.emit('shikitor/keyup', e as _KeyboardEvent)
     onKeyup?.(e as _KeyboardEvent)
   })
-  input.addEventListener('keypress', e => callAllShikitorPlugins('onKeypress', e as _KeyboardEvent))
+  input.addEventListener('keypress', e => context.emit('shikitor/keypress', e as _KeyboardEvent))
 
   return shikitor
 }

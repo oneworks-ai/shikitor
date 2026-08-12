@@ -28,13 +28,13 @@ type MessageItem = IMessage & {
 
 const bundledPlugins = [
   providePopup,
-  provideCompletions({
+  [provideCompletions, {
     popupPlacement: 'top',
     footer: false
-  }),
-  atUser({
+  }] as const,
+  [atUser, {
     targets: ['Shikitor', 'YiJie', 'ShikitorBot']
-  }),
+  }] as const,
   provideSelectionToolbox,
   selectionToolboxForMd
 ]

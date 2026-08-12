@@ -67,20 +67,22 @@ function dentSelection(selection: ResolvedSelection, {
   }
 }
 
-export default ({
-  tabSize: inputTabSize = 2,
-  insertSpaces = true
-}: CodeStylerOptions = {}) =>
-  definePlugin({
-    name: 'shikitor-code-styler',
-    async onKeydown(e) {
+export default definePlugin({
+  name: 'shikitor-code-styler',
+  inject: ['shikitor'],
+  apply(ctx, {
+    tabSize: inputTabSize = 2,
+    insertSpaces = true
+  }: CodeStylerOptions = {}) {
+    const shikitor = ctx.shikitor
+    ctx.on('shikitor/keydown', async e => {
       if (inputTabSize < 1) return
       const tabSize = ~~inputTabSize
       const textarea = e.target
-      const [selection] = this.selections
+      const [selection] = shikitor.selections
       if (selection.start.offset === selection.end.offset) {
         if (isPrevBracketKey(e.key) && !(e.metaKey || e.ctrlKey)) {
-          const { value, selections: [prevSelection] } = this
+          const { value, selections: [prevSelection] } = shikitor
           const cursor = prevSelection.end.offset
           const char = e.key
           const bracket = prevBracketMapping[char]
@@ -89,12 +91,12 @@ export default ({
             e.preventDefault()
             textarea.setRangeText(char + bracket, cursor, cursor)
             textarea.dispatchEvent(new Event('input'))
-            this.focus(cursor + 1)
+            shikitor.focus(cursor + 1)
             return
           }
         }
         if (isNextBracketKey(e.key) && !(e.metaKey || e.ctrlKey)) {
-          const { value, selections: [selection] } = this
+          const { value, selections: [selection] } = shikitor
           const nextCharIndex = selection.end.offset
           if (nextCharIndex > value.length) return
 
@@ -107,12 +109,12 @@ export default ({
             //      ```
             //      insert `>` at the cursor
             //      use stack
-            this.focus(nextCharIndex + 1)
+            shikitor.focus(nextCharIndex + 1)
           }
         }
       }
       if (['Tab', 'Enter'].includes(e.key) && !isMultipleKey(e, false)) {
-        const { selections: [selection] } = this
+        const { selections: [selection] } = shikitor
         const mutableSelection = { ...selection }
         if (e.key === 'Enter') {
           // TODO make timeout configurable for this plugin?
@@ -127,18 +129,18 @@ export default ({
         }
         e.preventDefault()
 
-        const { value, rawTextHelper } = this
+        const { value, rawTextHelper } = shikitor
         dentSelection(mutableSelection, {
           codeStyler: { tabSize, insertSpaces },
           direction: !e.shiftKey,
           textarea,
           value,
           rawTextHelper,
-          updateSelection: (start, end) => this.updateSelection(0, { start, end })
+          updateSelection: (start, end) => shikitor.updateSelection(0, { start, end })
         })
       }
       if (e.key === 'ArrowLeft' && (e.ctrlKey || e.metaKey)) {
-        const { value, rawTextHelper, selections: [{ end }] } = this
+        const { value, rawTextHelper, selections: [{ end }] } = shikitor
         const [
           lineStart,
           lineEnd
@@ -161,12 +163,13 @@ export default ({
         if (cursorT0 !== end.offset) {
           e.preventDefault()
           if (!e.shiftKey) {
-            this.focus(cursorT0)
+            shikitor.focus(cursorT0)
           } else {
-            this.updateSelection(0, { start: cursorT0, end: end.offset })
+            shikitor.updateSelection(0, { start: cursorT0, end: end.offset })
           }
           return
         }
       }
-    }
-  })
+    })
+  }
+})
