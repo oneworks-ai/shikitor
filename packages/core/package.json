@@ -13,6 +13,9 @@
     "./types": "./src/types.ts",
     "./utils": "./src/utils/index.ts",
     "./utils/valtio": "./src/utils/valtio/index.ts",
+    "./plugins/code-folding": "./src/plugins/code-folding.ts",
+    "./plugins/gutter-decorations": "./src/plugins/gutter-decorations.ts",
+    "./plugins/line-widgets": "./src/plugins/line-widgets.ts",
     "./plugins/*": ["./src/plugins/*/index.ts", "./src/plugins/*.ts"]
   },
   "repository": {

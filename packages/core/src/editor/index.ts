@@ -1,4 +1,4 @@
-import type { DecorationItem, ResolvedPosition } from '@shikijs/core'
+import type { DecorationItem } from '@shikijs/core'
 import type { BundledLanguage, BundledTheme } from 'shiki'
 
 import type { _KeyboardEvent, RefObject, TextRange } from '../base'
@@ -24,9 +24,17 @@ interface ShikitorEvents {
 
 export interface ShikitorOptions extends ShikitorEvents {
   value?: string
-  cursor?: ResolvedPosition
+  cursor?: Cursor
   language?: BundledLanguage
   lineNumbers?: 'on' | 'off'
+  /**
+   * @default true
+   */
+  highlightCurrentLine?: boolean
+  /**
+   * Background color used to highlight the active line.
+   */
+  currentLineHighlightColor?: string
   /**
    * @default false
    */

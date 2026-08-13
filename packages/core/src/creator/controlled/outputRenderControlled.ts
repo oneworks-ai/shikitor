@@ -112,15 +112,25 @@ export function outputRenderControlled(
     const {
       readOnly,
       lineNumbers = 'on',
+      highlightCurrentLine = true,
+      currentLineHighlightColor,
       hideSelfCursorUsername = false
     } = get(derive({
       readOnly: get => get(optionsRef).current.readOnly,
       lineNumbers: get => get(optionsRef).current.lineNumbers,
+      highlightCurrentLine: get => get(optionsRef).current.highlightCurrentLine,
+      currentLineHighlightColor: get => get(optionsRef).current.currentLineHighlightColor,
       hideSelfCursorUsername: get => get(optionsRef).current.hideSelfCursorUsername
     }))
     target.classList.toggle('read-only', readOnly === true)
     target.classList.toggle('line-numbers', lineNumbers === 'on')
+    target.classList.toggle('hide-current-line', !highlightCurrentLine)
     target.classList.toggle('hide-self-cursor-username', hideSelfCursorUsername)
+    if (currentLineHighlightColor) {
+      target.style.setProperty(cssvar('current-line-color'), currentLineHighlightColor)
+    } else {
+      target.style.removeProperty(cssvar('current-line-color'))
+    }
   })
   let highlighter: ReturnType<typeof getHighlighter> | undefined
   const highlighterDeps = derive({

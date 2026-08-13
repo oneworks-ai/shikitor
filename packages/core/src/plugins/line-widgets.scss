@@ -1,0 +1,25 @@
+.shikitor--line-widgets {
+  .shikitor-output {
+    pointer-events: none;
+  }
+}
+
+.shikitor-line-widget {
+  position: relative;
+  z-index: 13;
+  box-sizing: border-box;
+  width: calc(100% + var(--shikitor-line-widget-gutter-width, 0px));
+  margin-left: calc(-1 * var(--shikitor-line-widget-gutter-width, 0px));
+  white-space: normal;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.shikitor-line-widget-gutter {
+  position: relative;
+  z-index: 11;
+  box-sizing: border-box;
+  width: 100%;
+  pointer-events: none;
+  user-select: none;
+}

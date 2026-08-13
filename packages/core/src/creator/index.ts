@@ -170,7 +170,7 @@ export async function create(
     const pos = selection.start.offset !== prevSelection?.start.offset
       ? selection.start
       : selection.end
-    if (optionsRef.current.cursor?.offset !== pos.offset) {
+    if (resolvePosition(optionsRef.current.cursor ?? 0).offset !== pos.offset) {
       optionsRef.current.cursor = resolvePosition(pos)
     }
     if (
@@ -258,8 +258,11 @@ export async function create(
         ...resolvedOptions
       } = callUpdateDispatcher(newOptions, this.options) ?? {}
       let newCursor = optionsRef.current.cursor
-      if (cursor?.offset !== newCursor?.offset) {
-        newCursor = cursor
+      if (cursor !== undefined) {
+        const { resolvePosition } = this.rawTextHelper
+        if (resolvePosition(cursor).offset !== resolvePosition(newCursor ?? 0).offset) {
+          newCursor = cursor
+        }
       }
       optionsRef.current = {
         ...resolvedOptions,

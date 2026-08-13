@@ -120,7 +120,7 @@ function completionItemTemplate(
   index: number
 ) {
   const { prefix } = completionItemTemplate
-  const kind = item.kind ? CompletionItemKind[item.kind]?.[0] ?? 'U' : 'U'
+  const kind = item.kind !== undefined ? CompletionItemKind[item.kind]?.[0] ?? 'U' : 'U'
   return `
     <div class="${classnames(prefix, selectedIndex === index && 'selected')}" data-index="${index}">
       <div class="${prefix}__kind">${kind}</div>
@@ -149,6 +149,10 @@ export interface ProvideCompletionsOptions {
    * @default true
    */
   footer?: boolean
+  /**
+   * @default 'No completions available'
+   */
+  emptyText?: string
   /**
    * @internal TODO support group completions popup
    */
@@ -200,7 +204,7 @@ export default definePlugin({
     const keywordStr = keyword === -1 ? '' : keyword ?? ''
     const innerCompletionItemTemplate = completionItemTemplate.bind(null, splitKeywords(keywordStr), selected)
     const completionsContent = completionsSnapshot.length === 0
-      ? 'No completions available'
+      ? options.emptyText ?? 'No completions available'
       : completionsSnapshot.map(innerCompletionItemTemplate).join('')
     const {
       footer = true,

@@ -60,8 +60,7 @@
       left: 0;
       width: 100%;
       height: var(--line-height);
-      background-color: var(--shikitor-fg-color);
-      opacity: .3;
+      background-color: var(--shikitor-current-line-color, var(--shikitor-fg-color-op7));
       pointer-events: none;
     }
   }
@@ -72,6 +71,7 @@
   }
   &-input {
     resize: none;
+    z-index: 3;
     color: transparent;
     caret-color: transparent;
     background-color: transparent;
@@ -88,7 +88,8 @@
       margin: 0;
     }
     &-lines {
-      display: block;
+      display: flex;
+      flex-direction: column;
       line-height: var(--line-height);
     }
     &-line {
@@ -203,6 +204,11 @@
   }
   &.hide-self-cursor-username {
     .shikitor-cursor__username {
+      display: none;
+    }
+  }
+  &.hide-current-line {
+    .shikitor-gutter-line-highlighted::before {
       display: none;
     }
   }

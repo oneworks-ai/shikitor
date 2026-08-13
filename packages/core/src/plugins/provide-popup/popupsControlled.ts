@@ -17,7 +17,14 @@ const REVERSE_MAP = {
   right: 'left'
 } as const
 
-function updatePopupElement(shikitor: Shikitor, ele: HTMLElement, popup: ResolvedPopup) {
+const popupResizeObservers = new WeakMap<HTMLElement, ResizeObserver>()
+
+function updatePopupElement(
+  shikitor: Shikitor,
+  ele: HTMLElement,
+  popup: ResolvedPopup,
+  observeSize = false
+) {
   ele.className = classnames(
     prefix,
     `${prefix}-${popup.id}`,
@@ -85,15 +92,16 @@ function updatePopupElement(shikitor: Shikitor, ele: HTMLElement, popup: Resolve
     passedOffset.left = (lines?.clientWidth ?? 0) + x
   }
   // watch ele width and height change
-  if (width === undefined || height === undefined) {
+  if (observeSize && (width === undefined || height === undefined)) {
     const observer = new ResizeObserver(() => {
       ele.style.setProperty(`--width`, `${ele.clientWidth}px`)
       ele.style.setProperty(`--height`, `${ele.clientHeight}px`)
     })
     observer.observe(ele)
+    popupResizeObservers.set(ele, observer)
   } else {
-    ele.style.setProperty(`--width`, `${width}px`)
-    ele.style.setProperty(`--height`, `${height}px`)
+    width !== undefined && ele.style.setProperty(`--width`, `${width}px`)
+    height !== undefined && ele.style.setProperty(`--height`, `${height}px`)
   }
   for (const key of passedKeys) {
     if (passedOffset[key] === undefined) continue
@@ -124,7 +132,7 @@ function updatePopupElement(shikitor: Shikitor, ele: HTMLElement, popup: Resolve
 }
 export function mountPopup(shikitor: Shikitor, popup: ResolvedPopup) {
   const ele = document.createElement('div')
-  updatePopupElement(shikitor, ele, popup)
+  updatePopupElement(shikitor, ele, popup, true)
   popup.render(ele)
   shikitor.element.appendChild(ele)
   return ele
@@ -133,7 +141,7 @@ export function mountPopup(shikitor: Shikitor, popup: ResolvedPopup) {
 export function popupsControlled(getShikitor: () => Shikitor) {
   const popups = proxy<ResolvedPopup[]>([])
   const prevPopupElements = new Map<ResolvedPopup, HTMLDivElement>()
-  const dispose = debounceSubscribe(popups, () => {
+  const disposeSubscribe = debounceSubscribe(popups, () => {
     const shikitor = getShikitor()
     const newPopupElements = new Map<ResolvedPopup, HTMLDivElement>()
     for (const popup of popups) {
@@ -147,6 +155,8 @@ export function popupsControlled(getShikitor: () => Shikitor) {
     }
     for (const [popup, ele] of prevPopupElements) {
       if (!newPopupElements.has(popup)) {
+        popupResizeObservers.get(ele)?.disconnect()
+        popupResizeObservers.delete(ele)
         ele.remove()
       }
     }
@@ -155,8 +165,35 @@ export function popupsControlled(getShikitor: () => Shikitor) {
       prevPopupElements.set(popup, ele)
     }
   })
+
+  let positionFrame: number | undefined
+  const updatePositions = () => {
+    if (positionFrame !== undefined) return
+    positionFrame = requestAnimationFrame(() => {
+      positionFrame = undefined
+      const shikitor = getShikitor()
+      for (const [popup, element] of prevPopupElements) {
+        updatePopupElement(shikitor, element, popup)
+      }
+    })
+  }
+  document.addEventListener('scroll', updatePositions, true)
+  window.addEventListener('resize', updatePositions)
+  const editorResizeObserver = new ResizeObserver(updatePositions)
+  editorResizeObserver.observe(getShikitor().element)
+
   return {
     popups,
-    dispose
+    dispose() {
+      disposeSubscribe()
+      document.removeEventListener('scroll', updatePositions, true)
+      window.removeEventListener('resize', updatePositions)
+      editorResizeObserver.disconnect()
+      if (positionFrame !== undefined) cancelAnimationFrame(positionFrame)
+      for (const element of prevPopupElements.values()) {
+        popupResizeObservers.get(element)?.disconnect()
+        popupResizeObservers.delete(element)
+      }
+    }
   }
 }

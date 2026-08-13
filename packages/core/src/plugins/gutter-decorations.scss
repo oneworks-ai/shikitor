@@ -1,0 +1,34 @@
+.shikitor--gutter-decorations {
+  .shikitor-gutter-line {
+    align-items: center;
+  }
+}
+
+.shikitor-gutter-decoration-slot {
+  position: relative;
+  z-index: 12;
+  display: inline-flex;
+  width: 23px;
+  min-height: var(--line-height);
+  flex: 0 0 23px;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+
+  &--left {
+    margin-left: 3px;
+  }
+
+  &--right {
+    margin-right: 3px;
+  }
+}
+
+.shikitor-gutter-decoration {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
