@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import { findFoldRanges, resolveFoldScrollMetrics } from '../../src/plugins/code-folding'
+import {
+  findFoldRanges,
+  resolveFoldScrollMetrics,
+  shouldUseFoldVisualHorizontalScroll
+} from '../../src/plugins/code-folding'
 
 describe('code folding ranges', () => {
+  it('lets a composed folded line own horizontal scrolling', () => {
+    expect(shouldUseFoldVisualHorizontalScroll(true, 1422, 634)).toBe(true)
+    expect(shouldUseFoldVisualHorizontalScroll(false, 1422, 634)).toBe(false)
+    expect(shouldUseFoldVisualHorizontalScroll(true, 634, 1422)).toBe(false)
+  })
+
   it('classifies multiline imports and preserves their closing suffix', () => {
     const ranges = findFoldRanges(`import {
   definePlugin,

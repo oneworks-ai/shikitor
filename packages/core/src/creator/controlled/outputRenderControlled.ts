@@ -118,6 +118,23 @@ export function createLatestRenderController<Input, Output>(
   }
 }
 
+/**
+ * Resolve the horizontal offset shared by the rendered code and cursor layers.
+ *
+ * Most editors can use the textarea's native scrollLeft. Visual transforms such
+ * as code folding may, however, compose a rendered line that is wider than any
+ * physical source line. Those transforms publish their own visual offset so a
+ * later vertical textarea scroll cannot snap the rendered document back to the
+ * textarea's smaller native range.
+ */
+export function resolveVisualScrollLeft(
+  inputScrollLeft: number,
+  visualScrollLeft: string
+) {
+  const resolved = Number.parseFloat(visualScrollLeft)
+  return Number.isFinite(resolved) ? resolved : inputScrollLeft
+}
+
 export function initDom(target: HTMLElement) {
   target.classList.add('shikitor')
   target.innerHTML = ''
@@ -136,13 +153,17 @@ export function initDom(target: HTMLElement) {
   output.classList.add('shikitor-output')
   input.addEventListener('scroll', () => {
     setTimeout(() => {
+      const scrollLeft = resolveVisualScrollLeft(
+        input.scrollLeft,
+        target.style.getPropertyValue(cssvar('visual-scroll-l'))
+      )
       target.style.setProperty(cssvar('scroll-t'), `${input.scrollTop}px`)
-      target.style.setProperty(cssvar('scroll-l'), `${input.scrollLeft}px`)
+      target.style.setProperty(cssvar('scroll-l'), `${scrollLeft}px`)
       target.style.setProperty(cssvar('offset-x'), 'calc(-1 * var(--shikitor-scroll-l, 0px))')
       target.style.setProperty(cssvar('offset-y'), 'calc(-1 * var(--shikitor-scroll-t, 0px))')
       // wait the output renders, whether not wait it, the scrollTop can't be set
       output.scrollTop = input.scrollTop
-      output.scrollLeft = input.scrollLeft
+      output.scrollLeft = scrollLeft
       lines.style.marginTop = `-${input.scrollTop}px`
     }, 10)
   })

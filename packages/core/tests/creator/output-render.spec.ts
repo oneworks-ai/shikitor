@@ -5,10 +5,17 @@ import { describe, expect, test, vi } from 'vitest'
 
 import {
   createLatestRenderController,
-  normalizeDecorations
+  normalizeDecorations,
+  resolveVisualScrollLeft
 } from '../../src/creator/controlled/outputRenderControlled'
 
 describe('output rendering', () => {
+  test('keeps a wider visual transform authoritative over native input scrolling', () => {
+    expect(resolveVisualScrollLeft(20, '808px')).toBe(808)
+    expect(resolveVisualScrollLeft(20, '')).toBe(20)
+    expect(resolveVisualScrollLeft(20, 'not-a-number')).toBe(20)
+  })
+
   test('drops stale decoration offsets and splits ranges at newlines', () => {
     const properties = { class: 'selection' }
     const decorations: DecorationItem[] = [

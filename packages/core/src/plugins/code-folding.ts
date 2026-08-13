@@ -68,6 +68,14 @@ export function resolveFoldScrollMetrics(
   return { scrollTop, maxScrollTop, thumbTop, thumbHeight }
 }
 
+export function shouldUseFoldVisualHorizontalScroll(
+  hasCollapsedRange: boolean,
+  visualContentWidth: number,
+  inputContentWidth: number
+) {
+  return hasCollapsedRange && visualContentWidth > inputContentWidth
+}
+
 const closingBracket: Record<string, string> = {
   '(': ')',
   '[': ']',
@@ -320,6 +328,8 @@ export default definePlugin({
     let renderPending = true
     let visualMaxScrollTop = 0
     let visualMaxScrollLeft = 0
+    let visualScrollLeft = 0
+    let visualOwnsHorizontalScroll = false
     const collapseLabel = options.collapseLabel ?? 'Collapse block'
     const expandLabel = options.expandLabel ?? 'Expand block'
 
@@ -359,24 +369,47 @@ export default definePlugin({
         .filter(line => !isLineHidden(line))
     }
 
-    function syncHorizontalScroll(requestedScrollLeft = input.scrollLeft) {
+    function syncHorizontalScroll(requestedScrollLeft?: number) {
       const viewportWidth = container.clientWidth
       // The textarea retains hidden source rows, so its scrollWidth can be
       // wider than the folded document. The rendered output is the visual
       // source of truth for horizontal geometry, just like visibleLines() is
       // for the vertical axis.
       const contentWidth = output.scrollWidth
+      const nextVisualOwnsHorizontalScroll = shouldUseFoldVisualHorizontalScroll(
+        collapsed.size > 0,
+        contentWidth,
+        input.scrollWidth
+      )
+      const nextScrollLeft = requestedScrollLeft ?? (visualOwnsHorizontalScroll
+        ? visualScrollLeft
+        : input.scrollLeft)
       const trackWidth = Math.max(0, viewportWidth - 14)
       const metrics = resolveFoldScrollMetrics(
         contentWidth,
         viewportWidth,
-        requestedScrollLeft,
+        nextScrollLeft,
         trackWidth
       )
       visualMaxScrollLeft = metrics.maxScrollTop
+      visualScrollLeft = metrics.scrollTop
+      visualOwnsHorizontalScroll = nextVisualOwnsHorizontalScroll
 
-      if (input.scrollLeft !== metrics.scrollTop) input.scrollLeft = metrics.scrollTop
+      // A folded visual line can be wider than every real source line because
+      // it combines the opening-line prefix, placeholder and cloned suffix.
+      // In that case textarea.scrollLeft cannot represent the visual offset:
+      // browsers clamp it to the textarea's much smaller native scrollWidth.
+      // Keep the rendered line authoritative and only mirror into the input
+      // when the native source is at least as wide as the folded output.
+      if (!visualOwnsHorizontalScroll && input.scrollLeft !== metrics.scrollTop) {
+        input.scrollLeft = metrics.scrollTop
+      }
       output.scrollLeft = metrics.scrollTop
+      if (visualOwnsHorizontalScroll) {
+        target.style.setProperty('--shikitor-visual-scroll-l', `${metrics.scrollTop}px`)
+      } else {
+        target.style.removeProperty('--shikitor-visual-scroll-l')
+      }
       target.style.setProperty('--shikitor-scroll-l', `${metrics.scrollTop}px`)
       target.style.setProperty('--shikitor-offset-x', `-${metrics.scrollTop}px`)
 
@@ -386,7 +419,7 @@ export default definePlugin({
     }
 
     function syncVisualScroll(requestedScrollTop = input.scrollTop) {
-      syncHorizontalScroll(input.scrollLeft)
+      syncHorizontalScroll()
       if (collapsed.size === 0) {
         visualMaxScrollTop = 0
         scrollTrack.hidden = true
@@ -475,7 +508,7 @@ export default definePlugin({
       )
       const line = lines[visibleIndex] ?? 1
       const lineText = shikitor.rawTextHelper.line({ line, character: 0 })
-      const x = Math.max(0, event.clientX - rect.left + input.scrollLeft)
+      const x = Math.max(0, event.clientX - rect.left + visualScrollLeft)
       let low = 0
       let high = lineText.length
       while (low < high) {
@@ -647,8 +680,11 @@ export default definePlugin({
     }
     target.addEventListener('click', onClick)
     const onInputScroll = () => {
-      if (collapsed.size === 0) {
+      if (!visualOwnsHorizontalScroll && input.scrollLeft !== visualScrollLeft) {
         syncHorizontalScroll(input.scrollLeft)
+      }
+      if (collapsed.size === 0) {
+        syncHorizontalScroll()
         return
       }
       syncVisualScroll(input.scrollTop)
@@ -670,10 +706,9 @@ export default definePlugin({
       if (horizontalDelta !== 0 && visualMaxScrollLeft > 0) {
         const nextScrollLeft = Math.min(
           visualMaxScrollLeft,
-          Math.max(0, input.scrollLeft + normalizeWheelDelta(event, horizontalDelta))
+          Math.max(0, visualScrollLeft + normalizeWheelDelta(event, horizontalDelta))
         )
-        if (nextScrollLeft !== input.scrollLeft) {
-          input.scrollLeft = nextScrollLeft
+        if (nextScrollLeft !== visualScrollLeft) {
           syncHorizontalScroll(nextScrollLeft)
           handled = true
         }
@@ -737,7 +772,6 @@ export default definePlugin({
         ? 0
         : Math.min(1, Math.max(0, (event.clientX - rect.left - thumbWidth / 2) / travel))
       const nextScrollLeft = ratio * visualMaxScrollLeft
-      input.scrollLeft = nextScrollLeft
       syncHorizontalScroll(nextScrollLeft)
     }
     const onHorizontalScrollbarPointerDown = (event: PointerEvent) => {
@@ -980,6 +1014,7 @@ export default definePlugin({
       input.removeEventListener('focus', onSelectionChange)
       input.removeEventListener('blur', onSelectionChange)
       shikitor._getCursorAbsolutePosition = getCursorAbsolutePosition
+      target.style.removeProperty('--shikitor-visual-scroll-l')
       target.classList.remove(
         'shikitor--code-folding',
         'shikitor--fold-rendering',
