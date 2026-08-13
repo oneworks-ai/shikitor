@@ -2,10 +2,12 @@ import type { Context as CordisContext } from 'cordis'
 
 import type { _KeyboardEvent } from './base'
 import type { ResolvedCursor, ResolvedSelection, Shikitor } from './editor'
+import type { InputDispatchSummary, ShikitorInputEvent, ShikitorInputService } from './input'
 
 declare module 'cordis' {
   interface Context {
     shikitor: Shikitor
+    shikitorInput: ShikitorInputService
   }
 
   interface Events {
@@ -17,6 +19,7 @@ declare module 'cordis' {
     'shikitor/keydown'(event: _KeyboardEvent): void
     'shikitor/keyup'(event: _KeyboardEvent): void
     'shikitor/keypress'(event: _KeyboardEvent): void
+    'shikitor/input'(event: ShikitorInputEvent, summary: InputDispatchSummary): void
     'shikitor/dispose'(): void
   }
 }

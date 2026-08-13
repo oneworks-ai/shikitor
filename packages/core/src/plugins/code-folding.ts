@@ -799,11 +799,11 @@ export default definePlugin({
       }).offset
       applySelection(offset, offset)
     }
-    document.addEventListener('pointerdown', onPointerDown, true)
-    document.addEventListener('pointermove', onPointerMove, true)
-    document.addEventListener('pointerup', onPointerUp, true)
-    document.addEventListener('pointercancel', onPointerUp, true)
-    document.addEventListener('mousedown', onMouseDown, true)
+    target.addEventListener('pointerdown', onPointerDown, true)
+    target.addEventListener('pointermove', onPointerMove, true)
+    target.addEventListener('pointerup', onPointerUp, true)
+    target.addEventListener('pointercancel', onPointerUp, true)
+    target.addEventListener('mousedown', onMouseDown, true)
     const onClickMapped = (event: MouseEvent) => {
       if (
         event.target instanceof Element
@@ -828,7 +828,7 @@ export default definePlugin({
       delete input.dataset.foldPointerOffset
       setTimeout(() => applySelection(selection.anchor, selection.focus), 0)
     }
-    document.addEventListener('click', onClickMapped, true)
+    target.addEventListener('click', onClickMapped, true)
     input.addEventListener('keydown', onKeyDown)
     const onSelectionChange = () => renderSelection()
     document.addEventListener('selectionchange', onSelectionChange)
@@ -874,12 +874,12 @@ export default definePlugin({
       scrollTrack.removeEventListener('pointerup', onScrollbarPointerUp)
       scrollTrack.removeEventListener('pointercancel', onScrollbarPointerUp)
       resizeObserver.disconnect()
-      document.removeEventListener('pointerdown', onPointerDown, true)
-      document.removeEventListener('pointermove', onPointerMove, true)
-      document.removeEventListener('pointerup', onPointerUp, true)
-      document.removeEventListener('pointercancel', onPointerUp, true)
-      document.removeEventListener('mousedown', onMouseDown, true)
-      document.removeEventListener('click', onClickMapped, true)
+      target.removeEventListener('pointerdown', onPointerDown, true)
+      target.removeEventListener('pointermove', onPointerMove, true)
+      target.removeEventListener('pointerup', onPointerUp, true)
+      target.removeEventListener('pointercancel', onPointerUp, true)
+      target.removeEventListener('mousedown', onMouseDown, true)
+      target.removeEventListener('click', onClickMapped, true)
       input.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('selectionchange', onSelectionChange)
       input.removeEventListener('select', onSelectionChange)

@@ -3,6 +3,7 @@ import type { BundledLanguage, BundledTheme } from 'shiki'
 
 import type { _KeyboardEvent, RefObject, TextRange } from '../base'
 import type { ShikitorContext } from '../context'
+import type { InputPlatform } from '../input'
 import type { InputShikitorPlugin } from '../plugin'
 import type { RecursiveReadonly } from '../types'
 import type { UpdateDispatcher } from '../utils/callUpdateDispatcher'
@@ -58,6 +59,14 @@ export interface ShikitorOptions extends ShikitorEvents {
   readOnly?: boolean
   theme?: BundledTheme
   decorations?: DecorationItem[]
+  input?: {
+    /**
+     * Override the host platform used to resolve cross-platform input
+     * modifiers such as `Mod`. This is captured when the editor is created;
+     * updating it later does not recreate the input router.
+     */
+    platform?: InputPlatform
+  }
   plugins?: InputShikitorPlugin[]
 }
 
