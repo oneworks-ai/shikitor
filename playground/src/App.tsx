@@ -8,6 +8,7 @@ import {
   CodeIcon,
   Edit1Icon,
   LogoGithubIcon,
+  MouseIcon,
   TranslateIcon
 } from 'tdesign-icons-react'
 
@@ -17,6 +18,7 @@ import { useI18n } from './i18n'
 type ComponentId =
   | 'Code Editor'
   | 'code-editor-ux'
+  | 'code-editor-input-events'
   | 'code-editor-typescript-lsp'
   | 'Markdown Editor'
   | 'Messenger'
@@ -62,6 +64,14 @@ const components: ComponentGroup[] = [
             breadcrumbParentKey: 'nav.codeEditor',
             icon: CodeIcon,
             component: lazy(() => import('./examples/CodeEditor'))
+          },
+          {
+            id: 'code-editor-input-events',
+            titleKey: 'nav.inputEvents',
+            descriptionKey: 'component.inputEvents.description',
+            breadcrumbParentKey: 'nav.codeEditor',
+            icon: MouseIcon,
+            component: lazy(() => import('./examples/InputEvents'))
           },
           {
             id: 'code-editor-typescript-lsp',
@@ -135,7 +145,7 @@ export default function App() {
           </div>
         </div>
 
-        <nav className='component-tree' aria-label='Component catalog'>
+        <nav className='component-tree' aria-label={t('nav.catalog')}>
           {components.map(group => (
             <section className='component-tree__group' key={group.labelKey}>
               <div className='component-tree__group-label'>
@@ -167,6 +177,7 @@ export default function App() {
                                 key={child.id}
                                 className={`component-tree__item component-tree__item--sub${selected ? ' component-tree__item--active' : ''}`}
                                 aria-current={selected ? 'page' : undefined}
+                                aria-label={t(child.navTitleKey ?? child.titleKey)}
                                 onClick={() => set('active', child.id)}
                               >
                                 <ChildIcon />
@@ -186,6 +197,7 @@ export default function App() {
                       key={item.id}
                       className={`component-tree__item${selected ? ' component-tree__item--active' : ''}`}
                       aria-current={selected ? 'page' : undefined}
+                      aria-label={t(item.titleKey)}
                       onClick={() => set('active', item.id)}
                     >
                       <Icon />
