@@ -198,23 +198,44 @@
     grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
   }
 
-  .t-radio-button {
-    padding-inline: 8px;
+  .t-radio-group > .t-radio-button {
+    display: flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 16px;
     text-align: center;
+  }
+
+  .t-radio-button__label {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
   }
 }
 
 .config-option {
   display: inline-flex;
+  width: 100%;
+  min-height: 18px;
   align-items: center;
   justify-content: center;
   gap: 5px;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .config-option__icon {
+  display: inline-grid;
+  flex: 0 0 16px;
+  place-items: center;
+  width: 16px;
+  height: 16px;
   color: currentColor;
   font-size: 14px;
+  line-height: 1;
 }
 
 .advanced-config {
