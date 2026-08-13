@@ -12,6 +12,7 @@ import { callUpdateDispatcher, completeAssign, listen } from '../utils' with {
 import { calcTextareaHeight } from '../utils/calcTextareaHeight'
 import { scoped } from '../utils/valtio/scoped'
 import { cursorControlled } from './controlled/cursorControlled'
+import { inputBindingsControlled } from './controlled/inputBindingsControlled'
 import { initDom, outputRenderControlled } from './controlled/outputRenderControlled'
 import { pluginsControlled } from './controlled/pluginsControlled'
 import { valueControlled } from './controlled/valueControlled'
@@ -64,6 +65,14 @@ export async function create(
   checkAborted()
 
   const [input, output, placeholder, lines] = initDom(target)
+  const listenInput = <K extends keyof HTMLElementEventMap>(
+    type: K,
+    listener: (event: HTMLElementEventMap[K]) => void,
+    capture = false
+  ) => {
+    input.addEventListener(type, listener, capture)
+    disposes.push(() => input.removeEventListener(type, listener, capture))
+  }
 
   const optionsRef = proxy({
     current: {
@@ -366,6 +375,30 @@ export async function create(
     shikitorSupportPlugin
   )
   context.provide('shikitor', shikitor)
+  // Keep the legacy keyboard hooks registered before the normalized binding
+  // router. A binding may synchronously stop immediate propagation, but that
+  // must not make the long-standing shikitor/keydown API disappear.
+  listenInput('keydown', e => {
+    context.emit('shikitor/keydown', e as _KeyboardEvent)
+    onKeydown?.(e as _KeyboardEvent)
+  }, true)
+  listenInput('keyup', e => {
+    context.emit('shikitor/keyup', e as _KeyboardEvent)
+    onKeyup?.(e as _KeyboardEvent)
+  }, true)
+  listenInput(
+    'keypress',
+    e => context.emit('shikitor/keypress', e as _KeyboardEvent),
+    true
+  )
+  const { dispose: disposeInputBindings } = inputBindingsControlled({
+    target,
+    input,
+    context,
+    shikitor,
+    platform: inputOptions.input?.platform
+  })
+  disposes.push(disposeInputBindings)
   await installAllPlugins()
   checkAborted()
 
@@ -374,23 +407,13 @@ export async function create(
     onSelectionChange?.(selections)
     context.emit('shikitor/selection-change', selections)
   })
-  input.addEventListener('focus', () => {
+  listenInput('focus', () => {
     context.emit('shikitor/focus')
     onFocused?.()
   })
-  input.addEventListener('blur', () => {
+  listenInput('blur', () => {
     context.emit('shikitor/blur')
     onBlurred?.()
   })
-  input.addEventListener('keydown', e => {
-    context.emit('shikitor/keydown', e as _KeyboardEvent)
-    onKeydown?.(e as _KeyboardEvent)
-  })
-  input.addEventListener('keyup', e => {
-    context.emit('shikitor/keyup', e as _KeyboardEvent)
-    onKeyup?.(e as _KeyboardEvent)
-  })
-  input.addEventListener('keypress', e => context.emit('shikitor/keypress', e as _KeyboardEvent))
-
   return shikitor
 }

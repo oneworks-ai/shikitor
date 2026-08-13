@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./input": "./src/input/index.ts",
     "./types": "./src/types.ts",
     "./utils": "./src/utils/index.ts",
     "./utils/valtio": "./src/utils/valtio/index.ts",
