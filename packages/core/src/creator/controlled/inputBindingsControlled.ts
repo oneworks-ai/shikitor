@@ -241,6 +241,11 @@ function normalizeMouseButton(button: number) {
   return undefined
 }
 
+function normalizePointerKind(pointerType: string | undefined): PointerKind {
+  if (pointerType === 'pen' || pointerType === 'touch') return pointerType
+  return 'mouse'
+}
+
 function readClientPoint(event: Event) {
   const pointer = event as Event & { clientX?: number; clientY?: number }
   return {
@@ -330,11 +335,20 @@ function normalizeNativeEvent(
     ...(['click', 'dblclick', 'auxclick', 'contextmenu'].includes(type)
       ? {
           pointer: {
-            pointerId: undefined,
-            pointerType: 'mouse',
+            // Click-family events are MouseEvents for compatibility, but
+            // modern browsers dispatch PointerEvent instances. Preserve the
+            // richer identity when present so pen/touch click bindings remain
+            // distinguishable, while legacy MouseEvents keep a mouse fallback.
+            pointerId: typeof pointerEvent.pointerId === 'number'
+              ? pointerEvent.pointerId
+              : undefined,
+            pointerType: normalizePointerKind(pointerEvent.pointerType),
             button: normalizeMouseButton((nativeEvent as MouseEvent).button),
             physicalButton: (nativeEvent as MouseEvent).button,
             buttons: (nativeEvent as MouseEvent).buttons,
+            pressure: typeof pointerEvent.pressure === 'number'
+              ? pointerEvent.pressure
+              : undefined,
             clicks: (nativeEvent as MouseEvent).detail,
             source: type === 'contextmenu' ? contextMenuSource : 'pointer'
           }
