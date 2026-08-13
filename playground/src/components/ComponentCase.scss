@@ -196,6 +196,11 @@
   .t-radio-group {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+
+    &.t-radio-group--filled .t-radio-group__bg-block {
+      top: 2px !important;
+      height: calc(100% - 4px) !important;
+    }
   }
 
   .t-radio-group > .t-radio-button {
