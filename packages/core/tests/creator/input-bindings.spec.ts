@@ -287,6 +287,64 @@ describe('creator input bindings DOM routing', () => {
     dispose()
   })
 
+  test('preserves PointerEvent metadata on click compatibility events', () => {
+    const root = new FakeElement(ownerDocument, 'shikitor')
+    const input = new FakeElement(ownerDocument, 'shikitor-input')
+    root.append(input)
+    const context = new Context() as unknown as Parameters<typeof inputBindingsControlled>[0]['context']
+    const routed = vi.fn()
+    context.on('shikitor/input', routed)
+    const { service, dispose } = inputBindingsControlled({
+      target: root as unknown as HTMLElement,
+      input: input as unknown as HTMLTextAreaElement,
+      context,
+      shikitor: fakeShikitor(root)
+    })
+    const action = vi.fn(() => true)
+    service.registerAction({ id: 'pen-double-click-action', run: action })
+    service.registerBinding({
+      id: 'pen-double-click',
+      action: 'pen-double-click-action',
+      trigger: {
+        type: 'dblclick',
+        button: 'primary',
+        pointerType: 'pen',
+        clicks: 2
+      }
+    })
+
+    root.dispatchEvent(domEvent('dblclick', {
+      pointerId: 42,
+      pointerType: 'pen',
+      pressure: 0.6,
+      button: 0,
+      buttons: 1,
+      detail: 2
+    }))
+
+    expect(action).toHaveBeenCalledOnce()
+    expect(routed.mock.lastCall?.[0]).toEqual(expect.objectContaining({
+      type: 'dblclick',
+      pointer: expect.objectContaining({
+        pointerId: 42,
+        pointerType: 'pen',
+        pressure: 0.6,
+        button: 'primary',
+        clicks: 2,
+        source: 'pointer'
+      })
+    }))
+
+    root.dispatchEvent(domEvent('click', {
+      pointerType: '',
+      button: 0,
+      buttons: 0,
+      detail: 1
+    }))
+    expect(routed.mock.lastCall?.[0].pointer.pointerType).toBe('mouse')
+    dispose()
+  })
+
   test('distinguishes pointer and keyboard context-menu commands', () => {
     const root = new FakeElement(ownerDocument, 'shikitor')
     const input = new FakeElement(ownerDocument, 'shikitor-input')
