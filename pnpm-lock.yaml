@@ -154,6 +154,9 @@ importers:
       typed-query-selector:
         specifier: ^2.11.2
         version: 2.11.2
+      typescript:
+        specifier: ^5.4.3
+        version: 5.4.3
       vite:
         specifier: ^5.2.8
         version: 5.2.8(@types/node@20.11.30)(sass@1.72.0)

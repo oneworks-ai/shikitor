@@ -8,12 +8,26 @@ import lineWidgets, { type LineWidget } from '@shikitor/core/plugins/line-widget
 import provideCompletions from '@shikitor/core/plugins/provide-completions'
 import providePopup from '@shikitor/core/plugins/provide-popup'
 import { WithoutCoreEditor } from '@shikitor/react'
-import React, { type CSSProperties, type ReactNode, useMemo, useRef, useState } from 'react'
+import React, {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import type { BundledLanguage, BundledTheme } from 'shiki'
 import { bundledLanguagesInfo } from 'shiki'
 import { ColorPicker, Input, Radio, Select, Slider, Switch } from 'tdesign-react'
 
-import { ComponentCase, ConfigField, SwitchField } from '../../components/ComponentCase'
+import {
+  AdvancedConfig,
+  ComponentCase,
+  ConfigField,
+  ConfigOption,
+  SwitchField
+} from '../../components/ComponentCase'
 import { useQueries } from '../../hooks/useQueries'
 import { useI18n } from '../../i18n'
 import { useShikitorCreate } from '../../hooks/useShikitorCreate'
@@ -27,16 +41,19 @@ const noPlugins: InputShikitorPlugin[] = []
 
 const themePairs = {
   github: {
+    icon: 'code',
     label: 'GitHub',
     light: 'github-light',
     dark: 'github-dark'
   },
   vitesse: {
+    icon: 'bolt',
     label: 'Vitesse',
     light: 'vitesse-light',
     dark: 'vitesse-dark'
   },
   min: {
+    icon: 'horizontal_rule',
     label: 'Minimal',
     light: 'min-light',
     dark: 'min-dark'
@@ -172,7 +189,7 @@ export default function CodeEditor() {
     'const editor = shikitor\n\neditor.'
   )
   const [editingCode, setEditingCode] = useState(
-    'const features = [\n  "bracket matching",\n  "smart indentation",\n  "selection wrapping"\n] as const\n\nif (features.length > 2) {\n  console.log("ready")\n} else {\n  console.log("empty")\n}\n\nexport { features }'
+    'import React from "react"\nimport {\n  definePlugin,\n  type Shikitor\n} from "@shikitor/core"\n\n/* Runtime integration */\nimport { Context } from "cordis"\n\nconst pluginName = "editor"\n\n// Optional development tooling\nimport { createLogger } from "./logger"\nimport "./editor.css"\n\n// Highlight matching brackets\n// Indent paired characters\n// Wrap selected text\n\nfunction configureEditor(editor: Shikitor, context: Context) {\n  createLogger(context, pluginName)\n  return definePlugin({ name: pluginName })\n}\n\nexport { configureEditor }'
   )
   const [behaviorCode, setBehaviorCode] = useState(
     'export function greet(name: string) {\n  return `Hello, ${name}!`\n}'
@@ -191,6 +208,45 @@ export default function CodeEditor() {
   const [lineWidgetColors, setLineWidgetColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const [gutterColors, setGutterColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const cursorEditorRef = useRef<Shikitor>(null)
+  const gutterCounterRef = useRef(3)
+  const gutterEditorMountCountRef = useRef(0)
+  const gutterDecorationRenderCountRef = useRef(0)
+  const gutterProbeRef = useRef<HTMLDivElement>(null)
+  const editingInitialFocusRef = useRef(false)
+  const lineWidgetInitialFocusRef = useRef(false)
+
+  const updateGutterProbe = useCallback(() => {
+    const probe = gutterProbeRef.current
+    if (!probe) return
+    const values = {
+      counter: gutterCounterRef.current,
+      editor: gutterEditorMountCountRef.current,
+      decoration: gutterDecorationRenderCountRef.current
+    }
+    for (const [name, value] of Object.entries(values)) {
+      const target = probe.querySelector<HTMLElement>(`[data-gutter-probe="${name}"]`)
+      if (target) target.textContent = String(value)
+    }
+  }, [])
+
+  const handleGutterMounted = useCallback(() => {
+    gutterEditorMountCountRef.current += 1
+    updateGutterProbe()
+  }, [updateGutterProbe])
+
+  const handleEditingMounted = useCallback((editor: Shikitor) => {
+    if (editingInitialFocusRef.current) return
+    editingInitialFocusRef.current = true
+    editor.focus({ line: 1, character: 0 })
+  }, [])
+
+  const handleLineWidgetMounted = useCallback((editor: Shikitor) => {
+    if (lineWidgetInitialFocusRef.current) return
+    lineWidgetInitialFocusRef.current = true
+    editor.focus({ line: 2, character: 16 })
+  }, [])
+
+  useEffect(updateGutterProbe)
 
   const themeOptions = useMemo(() => ({
     language,
@@ -319,13 +375,28 @@ export default function CodeEditor() {
         position: gutterDecorationPosition,
         className: 'demo-gutter-decoration',
         render(container) {
-          container.innerHTML = `<button type="button" class="demo-gutter-badge" title="${
-            isChinese ? '3 处引用' : '3 usages'
-          }">3</button>`
+          gutterDecorationRenderCountRef.current += 1
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = 'demo-gutter-badge'
+          button.title = isChinese ? '点击增加引用计数' : 'Increment usage count'
+          const label = document.createTextNode(String(gutterCounterRef.current))
+          button.append(label)
+          const increment = () => {
+            gutterCounterRef.current += 1
+            // Updating Text.data avoids a child-list mutation, so this probe
+            // does not cause the gutter plugin to remount its own decoration.
+            label.data = String(gutterCounterRef.current)
+            updateGutterProbe()
+          }
+          button.addEventListener('click', increment)
+          container.append(button)
+          updateGutterProbe()
+          return () => button.removeEventListener('click', increment)
         }
       }
     ]
-  }, [gutterDecorationPosition, gutterDecorationsVisible, locale])
+  }, [gutterDecorationPosition, gutterDecorationsVisible, locale, updateGutterProbe])
   const gutterDecorationPlugins = useMemo<InputShikitorPlugin[]>(() => (
     gutterDecorationsVisible
       ? [[gutterDecorations, { decorations: gutterDecorationDefinitions }]]
@@ -353,7 +424,11 @@ export default function CodeEditor() {
           </EditorFrame>
         )}
       >
-        <ConfigField label={t('code.theme.language')} description={t('code.theme.languageHelp')}>
+        <ConfigField
+          icon='data_object'
+          label={t('code.theme.language')}
+          description={t('code.theme.languageHelp')}
+        >
           <Select
             filterable
             value={language}
@@ -364,55 +439,80 @@ export default function CodeEditor() {
             }))}
           />
         </ConfigField>
-        <ConfigField label={t('code.theme.preset')} description={t('code.theme.presetHelp')}>
+        <ConfigField
+          icon='palette'
+          label={t('code.theme.preset')}
+          description={t('code.theme.presetHelp')}
+        >
           <Radio.Group
             variant='default-filled'
             value={themeFamily}
             options={Object.entries(themePairs).map(([value, pair]) => ({
-              label: pair.label,
+              label: <ConfigOption icon={pair.icon}>{pair.label}</ConfigOption>,
               value
             }))}
             onChange={value => queries.set('code-editor.theme.family', value as string)}
           />
         </ConfigField>
-        <ConfigField label={t('code.theme.mode')} description={t('code.theme.resolved', { theme })}>
+        <ConfigField
+          icon='contrast'
+          label={t('code.theme.mode')}
+          description={t('code.theme.resolved', { theme })}
+        >
           <Radio.Group
             variant='default-filled'
             value={themeMode}
             options={[
-              { label: t('code.theme.light'), value: 'light' },
-              { label: t('code.theme.dark'), value: 'dark' }
+              {
+                label: <ConfigOption icon='light_mode'>{t('code.theme.light')}</ConfigOption>,
+                value: 'light'
+              },
+              {
+                label: <ConfigOption icon='dark_mode'>{t('code.theme.dark')}</ConfigOption>,
+                value: 'dark'
+              }
             ]}
             onChange={value => queries.set('code-editor.theme.mode', value as string)}
           />
         </ConfigField>
-        <SwitchField label={t('code.lineNumbers')} description={t('code.lineNumbersHelp')}>
-          <Switch
-            size='small'
-            value={themeLineNumbers}
-            onChange={value => queries.set('code-editor.theme.line-numbers', String(value))}
-          />
-        </SwitchField>
-        <SwitchField label={t('code.currentLine')} description={t('code.currentLineHelp')}>
-          <Switch
-            size='small'
-            value={themeCurrentLine}
-            onChange={value => queries.set('code-editor.theme.current-line', String(value))}
-          />
-        </SwitchField>
-        <ConfigField
-          label={t('code.currentLineColor')}
-          description={t('code.currentLineColorHelp')}
-          value={themeCurrentLineColor}
-        >
-          <ColorPicker
+        <AdvancedConfig label={t('case.advanced')}>
+          <SwitchField
+            icon='format_list_numbered'
+            label={t('code.lineNumbers')}
+            description={t('code.lineNumbersHelp')}
+          >
+            <Switch
+              size='small'
+              value={themeLineNumbers}
+              onChange={value => queries.set('code-editor.theme.line-numbers', String(value))}
+            />
+          </SwitchField>
+          <SwitchField
+            icon='view_agenda'
+            label={t('code.currentLine')}
+            description={t('code.currentLineHelp')}
+          >
+            <Switch
+              size='small'
+              value={themeCurrentLine}
+              onChange={value => queries.set('code-editor.theme.current-line', String(value))}
+            />
+          </SwitchField>
+          <ConfigField
+            icon='format_color_fill'
+            label={t('code.currentLineColor')}
+            description={t('code.currentLineColorHelp')}
             value={themeCurrentLineColor}
-            enableAlpha
-            format='RGBA'
-            colorModes={['monochrome']}
-            onChange={value => queries.set('code-editor.theme.current-line-color', value)}
-          />
-        </ConfigField>
+          >
+            <ColorPicker
+              value={themeCurrentLineColor}
+              enableAlpha
+              format='RGBA'
+              colorModes={['monochrome']}
+              onChange={value => queries.set('code-editor.theme.current-line-color', value)}
+            />
+          </ConfigField>
+        </AdvancedConfig>
       </ComponentCase>
 
       <ComponentCase
@@ -447,7 +547,11 @@ export default function CodeEditor() {
           </EditorFrame>
         )}
       >
-        <SwitchField label={t('code.cursor.bubble')} description={t('code.cursor.bubbleHelp')}>
+        <SwitchField
+          icon='person_pin_circle'
+          label={t('code.cursor.bubble')}
+          description={t('code.cursor.bubbleHelp')}
+        >
           <Switch
             size='small'
             value={cursorBubble}
@@ -455,62 +559,80 @@ export default function CodeEditor() {
           />
         </SwitchField>
         <ConfigField
-          label={t('code.cursor.color')}
-          description={t('code.cursor.colorHelp')}
-          value={cursorColor}
+          icon='text_fields'
+          label={t('code.cursor.type')}
+          description={t('code.cursor.typeHelp')}
         >
-          <span className='color-control'>
-            <input
-              type='color'
-              value={cursorColor}
-              aria-label={t('code.cursor.color')}
-              onChange={event => queries.set('code-editor.cursor.color', event.target.value)}
-            />
-            <Input
-              value={cursorColor}
-              onChange={value => queries.set('code-editor.cursor.color', value)}
-            />
-          </span>
-        </ConfigField>
-        <ConfigField label={t('code.cursor.type')} description={t('code.cursor.typeHelp')}>
           <Radio.Group
             variant='default-filled'
             value={cursorType}
             options={[
-              { label: t('code.cursor.line'), value: 'line' },
-              { label: t('code.cursor.block'), value: 'block' },
-              { label: t('code.cursor.underline'), value: 'underline' }
+              {
+                label: <ConfigOption icon='border_vertical'>{t('code.cursor.line')}</ConfigOption>,
+                value: 'line'
+              },
+              {
+                label: <ConfigOption icon='crop_square'>{t('code.cursor.block')}</ConfigOption>,
+                value: 'block'
+              },
+              {
+                label: <ConfigOption icon='horizontal_rule'>{t('code.cursor.underline')}</ConfigOption>,
+                value: 'underline'
+              }
             ]}
             onChange={value => queries.set('code-editor.cursor.type', value as string)}
           />
         </ConfigField>
-        <ConfigField
-          label={t('code.cursor.size')}
-          description={t('code.cursor.sizeHelp')}
-          value={`${cursorSize}px`}
-        >
-          <Slider
-            min={1}
-            max={8}
-            value={cursorSize}
-            label={false}
-            onChange={value => queries.set('code-editor.cursor.size', String(value))}
-          />
-        </ConfigField>
-        <ConfigField
-          label={t('code.cursor.blink')}
-          description={t('code.cursor.blinkHelp')}
-          value={`${cursorBlink}ms`}
-        >
-          <Slider
-            min={200}
-            max={1600}
-            step={100}
-            value={cursorBlink}
-            label={false}
-            onChange={value => queries.set('code-editor.cursor.blink', String(value))}
-          />
-        </ConfigField>
+        <AdvancedConfig label={t('case.advanced')}>
+          <ConfigField
+            icon='palette'
+            label={t('code.cursor.color')}
+            description={t('code.cursor.colorHelp')}
+            value={cursorColor}
+          >
+            <span className='color-control'>
+              <input
+                type='color'
+                value={cursorColor}
+                aria-label={t('code.cursor.color')}
+                onChange={event => queries.set('code-editor.cursor.color', event.target.value)}
+              />
+              <Input
+                value={cursorColor}
+                onChange={value => queries.set('code-editor.cursor.color', value)}
+              />
+            </span>
+          </ConfigField>
+          <ConfigField
+            icon='line_weight'
+            label={t('code.cursor.size')}
+            description={t('code.cursor.sizeHelp')}
+            value={`${cursorSize}px`}
+          >
+            <Slider
+              min={1}
+              max={8}
+              value={cursorSize}
+              label={false}
+              onChange={value => queries.set('code-editor.cursor.size', String(value))}
+            />
+          </ConfigField>
+          <ConfigField
+            icon='animation'
+            label={t('code.cursor.blink')}
+            description={t('code.cursor.blinkHelp')}
+            value={`${cursorBlink}ms`}
+          >
+            <Slider
+              min={200}
+              max={1600}
+              step={100}
+              value={cursorBlink}
+              label={false}
+              onChange={value => queries.set('code-editor.cursor.blink', String(value))}
+            />
+          </ConfigField>
+        </AdvancedConfig>
       </ComponentCase>
 
       <ComponentCase
@@ -580,7 +702,8 @@ export default function CodeEditor() {
               onChange={setEditingCode}
               plugins={editingPlugins}
               onColorChange={setEditingColors}
-              options={{ ...editingOptions, cursor: { line: 1, character: 18 } }}
+              options={editingOptions}
+              onMounted={handleEditingMounted}
             />
           </EditorFrame>
         )}
@@ -633,7 +756,8 @@ export default function CodeEditor() {
               onChange={setLineWidgetCode}
               plugins={lineWidgetPlugins}
               onColorChange={setLineWidgetColors}
-              options={{ ...lineWidgetOptions, cursor: { line: 2, character: 16 } }}
+              options={lineWidgetOptions}
+              onMounted={handleLineWidgetMounted}
             />
           </EditorFrame>
         )}
@@ -687,6 +811,7 @@ export default function CodeEditor() {
               onChange={setGutterCode}
               options={lineWidgetOptions}
               plugins={gutterDecorationPlugins}
+              onMounted={handleGutterMounted}
               onColorChange={setGutterColors}
             />
           </EditorFrame>
@@ -710,9 +835,17 @@ export default function CodeEditor() {
             onChange={value => queries.set('code-editor.gutter.position', value as string)}
           />
         </ConfigField>
-        <div className='case-tip'>
+        <div ref={gutterProbeRef} className='case-tip case-tip--render-probe'>
           <span className='shikitor-icon'>view_sidebar</span>
-          {t('code.gutter.hint')}
+          <div>
+            <strong>{t('code.gutter.probeTitle')}</strong>
+            <span>
+              {t('code.gutter.probeCounter')} <b data-gutter-probe='counter'>3</b>
+              {' · '}{t('code.gutter.probeEditor')} <b data-gutter-probe='editor'>0</b>
+              {' · '}{t('code.gutter.probeDecoration')} <b data-gutter-probe='decoration'>0</b>
+            </span>
+            <small>{t('code.gutter.probeHint')}</small>
+          </div>
         </div>
       </ComponentCase>
 

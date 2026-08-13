@@ -1,12 +1,39 @@
 .shikitor--line-widgets {
+  .shikitor-input::selection {
+    background: transparent;
+  }
+
   .shikitor-output {
+    // A line widget belongs to the whole editor row rather than only the code
+    // column. The editor root still clips the final surface, while allowing
+    // the widget to extend through the output's left edge into the gutter.
+    overflow: visible;
     pointer-events: none;
   }
 }
 
+.shikitor-line-widget-selection {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.shikitor-line-widget-selection__line {
+  --selection-start: 0ch;
+  --selection-end: 100%;
+
+  position: absolute;
+  right: calc(100% - var(--selection-end));
+  left: var(--selection-start);
+  height: var(--line-height);
+  background: var(--shikitor-fg-color-op6, rgba(124, 108, 242, .36));
+}
+
 .shikitor-line-widget {
   position: relative;
-  z-index: 13;
+  z-index: 20;
   box-sizing: border-box;
   width: calc(100% + var(--shikitor-line-widget-gutter-width, 0px));
   margin-left: calc(-1 * var(--shikitor-line-widget-gutter-width, 0px));

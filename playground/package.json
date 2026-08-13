@@ -24,6 +24,7 @@
     "shiki": "^1.6.2",
     "tdesign-icons-react": "^0.3.2",
     "tdesign-react": "^1.5.5",
+    "typescript": "^5.4.3",
     "typed-query-selector": "^2.11.2",
     "vite": "^5.2.8",
     "vite-plugin-glob-accept": "^0.1.0",
