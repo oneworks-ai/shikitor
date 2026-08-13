@@ -89,12 +89,14 @@
     }
     &-lines {
       display: flex;
+      width: max-content;
+      min-width: 100%;
       flex-direction: column;
       line-height: var(--line-height);
     }
     &-line {
       position: relative;
-      min-width: calc(100% - var(--gutter-width));
+      min-width: 100%;
     }
     .tab, .space {
       position: relative;
