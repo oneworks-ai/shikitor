@@ -2,8 +2,6 @@ import './ComponentCase.scss'
 
 import React, { type ReactNode, useEffect } from 'react'
 
-import { useI18n } from '../i18n'
-
 export interface ComponentCaseProps {
   id: string
   index: string
@@ -23,7 +21,6 @@ export function ComponentCase({
   children,
   tags = []
 }: ComponentCaseProps) {
-  const { t } = useI18n()
   useEffect(() => {
     if (decodeURIComponent(location.hash.slice(1)) !== id) return
     const target = document.getElementById(id)
@@ -57,13 +54,6 @@ export function ComponentCase({
       <div className='component-case__body'>
         <div className='component-case__preview'>{preview}</div>
         <aside className='component-case__controls'>
-          <div className='component-case__controls-heading'>
-            <span className='shikitor-icon'>tune</span>
-            <div>
-              <strong>{t('case.configuration')}</strong>
-              <span>{t('case.instant')}</span>
-            </div>
-          </div>
           <div className='component-case__control-list'>{children}</div>
         </aside>
       </div>
@@ -72,11 +62,13 @@ export function ComponentCase({
 }
 
 export function ConfigField({
+  icon,
   label,
   description,
   value,
   children
 }: {
+  icon?: string
   label: string
   description?: string
   value?: ReactNode
@@ -85,9 +77,12 @@ export function ConfigField({
   return (
     <label className='config-field'>
       <span className='config-field__label'>
-        <span>
-          <strong>{label}</strong>
-          {description && <small>{description}</small>}
+        <span className='config-field__label-main'>
+          {icon && <span className='config-field__icon shikitor-icon' aria-hidden='true'>{icon}</span>}
+          <span className='config-field__copy'>
+            <strong>{label}</strong>
+            {description && <small>{description}</small>}
+          </span>
         </span>
         {value !== undefined && <code>{value}</code>}
       </span>
@@ -97,10 +92,12 @@ export function ConfigField({
 }
 
 export function SwitchField({
+  icon,
   label,
   description,
   children
 }: {
+  icon?: string
   label: string
   description?: string
   children: ReactNode
@@ -108,12 +105,45 @@ export function SwitchField({
   return (
     <div className='config-field config-field--inline'>
       <span className='config-field__label'>
-        <span>
-          <strong>{label}</strong>
-          {description && <small>{description}</small>}
+        <span className='config-field__label-main'>
+          {icon && <span className='config-field__icon shikitor-icon' aria-hidden='true'>{icon}</span>}
+          <span className='config-field__copy'>
+            <strong>{label}</strong>
+            {description && <small>{description}</small>}
+          </span>
         </span>
       </span>
       <span className='config-field__control'>{children}</span>
     </div>
+  )
+}
+
+export function AdvancedConfig({
+  label,
+  children,
+  defaultOpen = false
+}: {
+  label: string
+  children: ReactNode
+  defaultOpen?: boolean
+}) {
+  return (
+    <details className='advanced-config' open={defaultOpen || undefined}>
+      <summary className='advanced-config__summary'>
+        <span className='advanced-config__summary-icon shikitor-icon' aria-hidden='true'>settings_suggest</span>
+        <span>{label}</span>
+        <span className='advanced-config__chevron shikitor-icon' aria-hidden='true'>expand_more</span>
+      </summary>
+      <div className='advanced-config__content'>{children}</div>
+    </details>
+  )
+}
+
+export function ConfigOption({ icon, children }: { icon: string; children: ReactNode }) {
+  return (
+    <span className='config-option'>
+      <span className='config-option__icon shikitor-icon' aria-hidden='true'>{icon}</span>
+      <span>{children}</span>
+    </span>
   )
 }

@@ -1,0 +1,352 @@
+.ts-lsp-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.ts-lsp-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--pg-border);
+  border-radius: 14px;
+  background: var(--pg-surface);
+
+  h2,
+  p {
+    margin: 0;
+  }
+
+  h2 {
+    margin-top: 5px;
+    font-size: 23px;
+    letter-spacing: -.025em;
+  }
+
+  p {
+    max-width: 680px;
+    margin-top: 6px;
+    color: var(--pg-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+
+.ts-lsp-eyebrow {
+  color: var(--pg-accent);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.ts-lsp-runtime {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 180px;
+  padding: 10px 12px;
+  border: 1px solid #e7e4fa;
+  border-radius: 10px;
+  color: #6d63a8;
+  background: #f8f7ff;
+
+  > .shikitor-icon {
+    font-size: 19px;
+  }
+
+  > span:last-child {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  strong,
+  small {
+    white-space: nowrap;
+  }
+
+  strong {
+    color: var(--pg-text);
+    font-size: 11px;
+  }
+
+  small {
+    color: var(--pg-text-tertiary);
+    font-size: 9px;
+  }
+
+  &--ready > .shikitor-icon {
+    color: #21a36f;
+  }
+}
+
+.ts-lsp-pipeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 1px solid var(--pg-border);
+  border-radius: 12px;
+  color: var(--pg-text-tertiary);
+  background: var(--pg-surface);
+
+  > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--pg-text-secondary);
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  > i {
+    font-size: 14px;
+  }
+
+  .shikitor-icon {
+    color: var(--pg-accent);
+    font-size: 15px;
+    font-style: normal;
+  }
+}
+
+.ts-lsp-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, .85fr);
+  min-height: 500px;
+  overflow: hidden;
+  border: 1px solid var(--pg-border);
+  border-radius: 14px;
+  background: var(--pg-surface);
+}
+
+.ts-lsp-editor-column {
+  min-width: 0;
+  background: #24292f;
+}
+
+.ts-lsp-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, .1);
+  color: #929ba6;
+  font-size: 10px;
+
+  > span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #d7dce2;
+    font-weight: 650;
+  }
+
+  .shikitor-icon {
+    color: #8b7ff1;
+    font-size: 15px;
+    font-style: normal;
+  }
+}
+
+.ts-lsp-editor {
+  height: 410px;
+  border-radius: 0;
+}
+
+.ts-lsp-editor-hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255, 255, 255, .1);
+  color: #aab2bd;
+  font-size: 10px;
+  line-height: 1.45;
+
+  .shikitor-icon {
+    color: #f0c96a;
+    font-size: 16px;
+  }
+}
+
+.ts-lsp-results {
+  min-width: 0;
+  border-left: 1px solid var(--pg-border);
+  background: #fff;
+}
+
+.ts-lsp-result-section + .ts-lsp-result-section {
+  border-top: 1px solid var(--pg-border-soft);
+}
+
+.ts-lsp-result-section {
+  padding: 16px;
+
+  > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+
+    > span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .shikitor-icon {
+      color: var(--pg-accent);
+      font-size: 16px;
+      font-style: normal;
+    }
+
+    b {
+      min-width: 20px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      color: var(--pg-accent);
+      background: var(--pg-accent-soft);
+      font-size: 9px;
+      text-align: center;
+    }
+  }
+}
+
+.ts-lsp-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ts-lsp-diagnostic {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #f3d7dc;
+  border-radius: 8px;
+  color: inherit;
+  background: #fff8f9;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  > span,
+  > small {
+    color: #be5263;
+    font-size: 8px;
+    font-weight: 750;
+  }
+
+  > strong {
+    min-width: 0;
+    font-size: 9px;
+    font-weight: 550;
+    line-height: 1.4;
+  }
+
+  &:hover {
+    border-color: #e7aab4;
+  }
+}
+
+.ts-lsp-empty {
+  margin: 0;
+  color: var(--pg-text-tertiary);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.ts-lsp-hover {
+  padding: 10px;
+  border: 1px solid var(--pg-border-soft);
+  border-radius: 8px;
+  background: var(--pg-surface-muted);
+
+  code {
+    color: #5546d9;
+    font-size: 10px;
+    white-space: pre-wrap;
+  }
+
+  p {
+    margin: 7px 0 0;
+    color: var(--pg-text-secondary);
+    font-size: 9px;
+  }
+}
+
+.ts-lsp-completions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 7px;
+    border: 1px solid var(--pg-border);
+    border-radius: 6px;
+    color: var(--pg-text-secondary);
+    background: var(--pg-surface-muted);
+    font-size: 9px;
+  }
+
+  i {
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    color: #fff;
+    background: var(--pg-accent);
+    font-size: 8px;
+    font-style: normal;
+  }
+}
+
+@media (max-width: 980px) {
+  .ts-lsp-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .ts-lsp-results {
+    border-top: 1px solid var(--pg-border);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .ts-lsp-hero {
+    flex-direction: column;
+  }
+
+  .ts-lsp-runtime {
+    width: 100%;
+  }
+
+  .ts-lsp-pipeline {
+    align-items: stretch;
+    flex-direction: column;
+
+    > i {
+      transform: rotate(90deg);
+      align-self: center;
+    }
+  }
+}

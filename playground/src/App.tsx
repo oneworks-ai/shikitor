@@ -14,19 +14,34 @@ import {
 import { useQueries } from './hooks/useQueries'
 import { useI18n } from './i18n'
 
-type ComponentId = 'Code Editor' | 'Markdown Editor' | 'Messenger'
+type ComponentId =
+  | 'Code Editor'
+  | 'code-editor-ux'
+  | 'code-editor-typescript-lsp'
+  | 'Markdown Editor'
+  | 'Messenger'
 
 interface ComponentItem {
   id: ComponentId
   titleKey: string
+  navTitleKey?: string
   descriptionKey: string
   icon: ComponentType
   component: LazyExoticComponent<ComponentType>
+  legacyIds?: ComponentId[]
+  breadcrumbParentKey?: string
+}
+
+interface ComponentBranch {
+  id: string
+  titleKey: string
+  icon: ComponentType
+  children: ComponentItem[]
 }
 
 interface ComponentGroup {
   labelKey: string
-  children: ComponentItem[]
+  children: (ComponentItem | ComponentBranch)[]
 }
 
 const components: ComponentGroup[] = [
@@ -34,11 +49,29 @@ const components: ComponentGroup[] = [
     labelKey: 'nav.editors',
     children: [
       {
-        id: 'Code Editor',
+        id: 'code-editor',
         titleKey: 'nav.codeEditor',
-        descriptionKey: 'component.codeEditor.description',
         icon: CodeIcon,
-        component: lazy(() => import('./examples/CodeEditor'))
+        children: [
+          {
+            id: 'code-editor-ux',
+            legacyIds: ['Code Editor'],
+            titleKey: 'nav.codeEditor',
+            navTitleKey: 'nav.codeEditorUx',
+            descriptionKey: 'component.codeEditor.description',
+            breadcrumbParentKey: 'nav.codeEditor',
+            icon: CodeIcon,
+            component: lazy(() => import('./examples/CodeEditor'))
+          },
+          {
+            id: 'code-editor-typescript-lsp',
+            titleKey: 'nav.typescriptLsp',
+            descriptionKey: 'component.typescriptLsp.description',
+            breadcrumbParentKey: 'nav.codeEditor',
+            icon: CodeIcon,
+            component: lazy(() => import('./examples/LanguageServices/TypeScript'))
+          }
+        ]
       },
       {
         id: 'Markdown Editor',
@@ -63,6 +96,10 @@ const components: ComponentGroup[] = [
   }
 ]
 
+const componentItems = components.flatMap(group => group.children.flatMap(item => (
+  'children' in item ? item.children : [item]
+)))
+
 export default function App() {
   const { locale, setLocale, t } = useI18n()
   const {
@@ -74,8 +111,8 @@ export default function App() {
     active: ComponentId
   }>()
   const activeItem = useMemo(() => {
-    return components.flatMap(group => group.children).find(item => item.id === active)
-      ?? components[0].children[0]
+    return componentItems.find(item => item.id === active || item.legacyIds?.includes(active))
+      ?? componentItems[0]
   }, [active])
   const ActiveComponent = activeItem.component
   const switchLocale = () => {
@@ -107,6 +144,40 @@ export default function App() {
               </div>
               <div className='component-tree__items'>
                 {group.children.map(item => {
+                  if ('children' in item) {
+                    const BranchIcon = item.icon
+                    const branchSelected = item.children.includes(activeItem)
+                    return (
+                      <div
+                        key={item.id}
+                        className={`component-tree__branch${branchSelected ? ' component-tree__branch--active' : ''}`}
+                      >
+                        <div className='component-tree__branch-label'>
+                          <ChevronDownIcon className='component-tree__branch-chevron' />
+                          <BranchIcon />
+                          <span>{t(item.titleKey)}</span>
+                        </div>
+                        <div className='component-tree__subitems'>
+                          {item.children.map(child => {
+                            const ChildIcon = child.icon
+                            const selected = child === activeItem
+                            return (
+                              <button
+                                type='button'
+                                key={child.id}
+                                className={`component-tree__item component-tree__item--sub${selected ? ' component-tree__item--active' : ''}`}
+                                aria-current={selected ? 'page' : undefined}
+                                onClick={() => set('active', child.id)}
+                              >
+                                <ChildIcon />
+                                <span>{t(child.navTitleKey ?? child.titleKey)}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  }
                   const Icon = item.icon
                   const selected = item.id === activeItem.id
                   return (
@@ -140,7 +211,11 @@ export default function App() {
         <header className='playground-header'>
           <div>
             <div className='playground-breadcrumb'>
-              {t('breadcrumb.components')} <span>/</span> {t(activeItem.titleKey)}
+              {t('breadcrumb.components')}
+              {activeItem.breadcrumbParentKey && (
+                <> <span>/</span> {t(activeItem.breadcrumbParentKey)}</>
+              )}
+              <span>/</span> {t(activeItem.navTitleKey ?? activeItem.titleKey)}
             </div>
             <h1>{t(activeItem.titleKey)}</h1>
             <p>{t(activeItem.descriptionKey)}</p>

@@ -4,7 +4,7 @@
   }
 
   .shikitor-output {
-    z-index: 2;
+    z-index: 4;
     pointer-events: none;
   }
 
@@ -20,6 +20,15 @@
   .shikitor-gutter-line-number {
     grid-row: 1;
     grid-column: 2;
+  }
+}
+
+.shikitor--code-folding.shikitor--fold-collapsed {
+  .shikitor-input {
+    // The textarea keeps the full source for editing, but its native vertical
+    // scrollbar represents hidden rows. The folding plugin supplies a visual
+    // scrollbar based on the rendered rows instead.
+    overflow-y: hidden;
   }
 }
 
@@ -65,13 +74,17 @@
 }
 
 .shikitor-fold-placeholder {
+  display: inline-block;
   position: relative;
   z-index: 12;
   margin-left: .5ch;
   padding: 0 .45ch;
+  border: 0;
   border-radius: 4px;
   color: var(--shikitor-fg-color-op3, currentColor);
   background: var(--shikitor-fg-color-op8, rgba(127, 127, 127, .18));
+  font: inherit;
+  line-height: inherit;
   font-style: italic;
   pointer-events: auto;
   cursor: pointer;
@@ -89,7 +102,7 @@
 
 .shikitor-fold-selection {
   position: absolute;
-  z-index: 4;
+  z-index: 5;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
@@ -104,4 +117,37 @@
   left: var(--selection-start);
   height: var(--line-height);
   background: rgba(124, 108, 242, .36);
+}
+
+.shikitor-fold-scrollbar {
+  position: absolute;
+  z-index: 14;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  border-radius: 4px;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+
+  &[hidden] {
+    display: none;
+  }
+
+  &:hover {
+    background: var(--shikitor-fg-color-op9, rgba(127, 127, 127, .08));
+  }
+}
+
+.shikitor-fold-scrollbar__thumb {
+  width: 100%;
+  min-height: 24px;
+  border-radius: inherit;
+  background: var(--shikitor-fg-color-op7, rgba(127, 127, 127, .3));
+  cursor: default;
+
+  .shikitor-fold-scrollbar:hover & {
+    background: var(--shikitor-fg-color-op6, rgba(127, 127, 127, .45));
+  }
 }

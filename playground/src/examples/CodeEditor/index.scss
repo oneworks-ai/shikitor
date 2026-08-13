@@ -86,6 +86,35 @@
   }
 }
 
+.case-tip--render-probe {
+  > div {
+    display: grid;
+    gap: 3px;
+  }
+
+  strong,
+  span,
+  small {
+    display: block;
+  }
+
+  strong {
+    color: #554b82;
+    font-size: 11px;
+  }
+
+  b {
+    color: var(--pg-accent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 700;
+  }
+
+  small {
+    color: #8a81ad;
+    font-size: 9px;
+  }
+}
+
 .demo-line-widget {
   padding: 8px 14px 10px 0;
 }

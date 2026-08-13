@@ -1,5 +1,6 @@
+import type { DecorationItem } from '@shikijs/core'
 import { transformerRenderWhitespace } from '@shikijs/transformers'
-import { getHighlighter } from 'shiki'
+import { bundledThemesInfo, getHighlighter } from 'shiki'
 import { derive } from 'valtio/utils'
 import { snapshot } from 'valtio/vanilla'
 
@@ -12,6 +13,110 @@ import { classnames, isMultipleKey, isWhatBrowser } from '../../utils' with {
 import { scoped } from '../../utils/valtio/scoped'
 import { HIGHLIGHTED } from '../classes'
 import { shikitorStructureTransformer } from '../structureTransfomer'
+
+const darkThemes = new Set(
+  bundledThemesInfo
+    .filter(({ type }) => type === 'dark')
+    .map(({ id }) => id)
+)
+
+export function normalizeDecorations(
+  value: string,
+  decorations?: DecorationItem[]
+): DecorationItem[] | undefined {
+  if (!decorations?.length || value.length === 0) return undefined
+
+  const lineStarts = [0]
+  for (let offset = 0; offset < value.length; offset++) {
+    if (value[offset] === '\n') lineStarts.push(offset + 1)
+  }
+  const resolveOffset = (position: DecorationItem['start']) => {
+    if (typeof position === 'number') return position
+    const { line, character } = position
+    if (
+      !Number.isInteger(line)
+      || !Number.isInteger(character)
+      || line < 0
+      || line >= lineStarts.length
+      || character < 0
+    ) return undefined
+    const lineStart = lineStarts[line]
+    const lineEnd = line + 1 < lineStarts.length
+      ? lineStarts[line + 1] - 1
+      : value.length
+    if (character > lineEnd - lineStart) return undefined
+    return lineStart + character
+  }
+
+  const normalized: DecorationItem[] = []
+  for (const decoration of decorations) {
+    const start = resolveOffset(decoration.start)
+    const end = resolveOffset(decoration.end)
+    if (
+      start === undefined
+      || end === undefined
+      || !Number.isInteger(start)
+      || !Number.isInteger(end)
+      || start < 0
+      || end <= start
+      || start >= value.length
+      || end > value.length
+    ) continue
+
+    // Shiki 1.12's whitespace transformer cannot safely process a decoration
+    // whose range includes a line break. Split otherwise-valid multi-line
+    // ranges into one decoration per visible line and omit newline-only spans.
+    let segmentStart = start
+    for (let offset = start; offset < end; offset++) {
+      if (value[offset] !== '\n') continue
+      if (segmentStart < offset) {
+        normalized.push({ ...decoration, start: segmentStart, end: offset })
+      }
+      segmentStart = offset + 1
+    }
+    if (segmentStart < end) {
+      normalized.push({ ...decoration, start: segmentStart, end })
+    }
+  }
+  return normalized.length ? normalized : undefined
+}
+
+interface LatestRenderHandlers<Input, Output> {
+  renderFallback: (input: Input) => void
+  renderAsync: (
+    input: Input,
+    isCurrent: () => boolean
+  ) => Promise<Output | undefined>
+  commit: (output: Output, input: Input) => void
+  onError?: (error: unknown, input: Input) => void
+}
+
+export function createLatestRenderController<Input, Output>(
+  handlers: LatestRenderHandlers<Input, Output>
+) {
+  let renderVersion = 0
+  let disposed = false
+
+  return {
+    async render(input: Input) {
+      if (disposed) return
+      const currentRender = ++renderVersion
+      const isCurrent = () => !disposed && currentRender === renderVersion
+      handlers.renderFallback(input)
+      try {
+        const rendered = await handlers.renderAsync(input, isCurrent)
+        if (rendered === undefined || !isCurrent()) return
+        handlers.commit(rendered, input)
+      } catch (error) {
+        if (isCurrent()) handlers.onError?.(error, input)
+      }
+    },
+    dispose() {
+      disposed = true
+      renderVersion++
+    }
+  }
+}
 
 export function initDom(target: HTMLElement) {
   target.classList.add('shikitor')
@@ -108,6 +213,56 @@ export function outputRenderControlled(
   }
 ) {
   const { scopeWatch, scopeSubscribe, disposeScoped } = scoped()
+  const highlighters = new Map<string, ReturnType<typeof getHighlighter>>()
+
+  function getCachedHighlighter(theme: string, language: string) {
+    const key = `${theme}\0${language}`
+    let highlighter = highlighters.get(key)
+    if (!highlighter) {
+      highlighter = getHighlighter({ themes: [theme], langs: [language] })
+      highlighters.set(key, highlighter)
+      void highlighter.catch(() => {
+        if (highlighters.get(key) === highlighter) highlighters.delete(key)
+      })
+    }
+    return highlighter
+  }
+
+  function renderPlainText(value: string, theme: string) {
+    const pre = document.createElement('pre')
+    const code = document.createElement('code')
+    code.className = 'shikitor-output-lines'
+    value.split('\n').forEach((source, index) => {
+      const line = document.createElement('div')
+      line.className = 'shikitor-output-line'
+      line.dataset.line = String(index + 1)
+      line.textContent = source || ' '
+      code.append(line)
+    })
+    pre.append(code)
+    output.replaceChildren(pre)
+    output.dataset.renderState = 'plaintext'
+    const isDark = darkThemes.has(theme)
+    output.style.color = isDark ? '#c9d1d9' : '#24292f'
+    output.style.backgroundColor = isDark ? '#0d1117' : '#ffffff'
+  }
+
+  function renderGutter(value: string) {
+    const lineCounts = value.split('\n').length
+    const gutterLinePrefix = `${'shikitor'}-gutter-line`
+    const cursorLine = cursorRef.current.line
+    const lineClass = (index: number) => {
+      const isCursor = !!cursorLine && cursorLine === index
+      return classnames(gutterLinePrefix, { [HIGHLIGHTED]: isCursor })
+    }
+    lines.style.setProperty(cssvar('line-digit-count'), `${lineCounts.toString().length}ch`)
+    lines.innerHTML = Array
+      .from({ length: lineCounts })
+      .map((_, i) => (`<div class="${lineClass(i + 1)}" data-line="${i + 1}">
+        <div class="${gutterLinePrefix}-number">${i + 1}</div>
+      </div>`))
+      .join('')
+  }
   scopeWatch(get => {
     const {
       readOnly,
@@ -132,66 +287,61 @@ export function outputRenderControlled(
       target.style.removeProperty(cssvar('current-line-color'))
     }
   })
-  let highlighter: ReturnType<typeof getHighlighter> | undefined
-  const highlighterDeps = derive({
-    theme: get => get(optionsRef).current.theme,
-    language: get => get(optionsRef).current.language
-  })
-  scopeWatch(async get => {
-    const {
-      theme = 'github-light',
-      language = 'javascript'
-    } = get(highlighterDeps)
-    highlighter = getHighlighter({ themes: [theme], langs: [language] })
-  })
   const outputRenderDeps = derive({
     theme: get => get(optionsRef).current.theme,
     language: get => get(optionsRef).current.language,
     // TODO remove decorations
     decorations: get => get(optionsRef).current.decorations
   })
-  scopeWatch(async get => {
+  type RenderInput = {
+    value: string
+    theme: string
+    language: string
+    decorations?: DecorationItem[]
+  }
+  const renderer = createLatestRenderController<RenderInput, string>({
+    renderFallback({ value, theme }) {
+      renderPlainText(value, theme)
+      renderGutter(value)
+    },
+    async renderAsync({ value, theme, language, decorations }, isCurrent) {
+      const highlighter = await getCachedHighlighter(theme, language)
+      // Do not let an obsolete theme/language request mutate target theme
+      // variables through the structure transformer.
+      if (!isCurrent()) return
+      return highlighter.codeToHtml(value, {
+        lang: language,
+        theme: theme,
+        decorations: normalizeDecorations(value, decorations),
+        transformers: [
+          shikitorStructureTransformer(target),
+          transformerRenderWhitespace()
+        ]
+      })
+    },
+    commit(highlighted) {
+      output.innerHTML = highlighted
+      output.dataset.renderState = 'highlighted'
+      output.style.removeProperty('color')
+      output.style.removeProperty('background-color')
+    },
+    onError(error) {
+      // The synchronous source view is already usable. Keep it mounted if an
+      // optional highlighter/decoration pass fails instead of blanking the
+      // editor, and still surface the failure for diagnostics.
+      output.dataset.renderState = 'fallback'
+      console.error(error)
+    }
+  })
+  scopeWatch(get => {
     const value = get(valueRef).current
     const {
       theme = 'github-light',
       language = 'javascript',
       decorations
     } = get(outputRenderDeps)
-    if (!highlighter || value === undefined) return
-
-    const { codeToHtml } = await highlighter
-    output.innerHTML = codeToHtml(value, {
-      lang: language,
-      theme: theme,
-      decorations,
-      transformers: [
-        shikitorStructureTransformer(target),
-        transformerRenderWhitespace()
-      ]
-    })
-    let lineCounts = 1
-    for (let i = 0; i < value.length; i++) {
-      if (value[i] === '\n') lineCounts++
-    }
-
-    const gutterLinePrefix = `${'shikitor'}-gutter-line`
-    const cursorLine = cursorRef.current.line
-    const lineClass = (index: number) => {
-      const isCursor = !!cursorLine && cursorLine === index
-      return classnames(
-        gutterLinePrefix,
-        {
-          [HIGHLIGHTED]: isCursor
-        }
-      )
-    }
-    lines.style.setProperty(cssvar('line-digit-count'), `${lineCounts.toString().length}ch`)
-    lines.innerHTML = Array
-      .from({ length: lineCounts })
-      .map((_, i) => (`<div class="${lineClass(i + 1)}" data-line="${i + 1}">
-        <div class="${gutterLinePrefix}-number">${i + 1}</div>
-      </div>`))
-      .join('')
+    if (value === undefined) return
+    void renderer.render({ value, theme, language, decorations })
   })
   scopeSubscribe(cursorRef, () => {
     const cursor = snapshot(cursorRef).current
@@ -206,5 +356,12 @@ export function outputRenderControlled(
     }
     line.classList.add(HIGHLIGHTED)
   })
-  return disposeScoped
+  return () => {
+    renderer.dispose()
+    disposeScoped()
+    for (const highlighter of highlighters.values()) {
+      void highlighter.then(instance => instance.dispose()).catch(() => {})
+    }
+    highlighters.clear()
+  }
 }
