@@ -219,6 +219,11 @@
     background: var(--pg-surface-muted);
   }
 
+  &:focus-visible {
+    outline: 2px solid var(--pg-accent);
+    outline-offset: 1px;
+  }
+
   &--active {
     color: var(--pg-accent);
     background: var(--pg-accent-soft);
@@ -452,6 +457,20 @@
     }
   }
 
+  .component-tree__branch-label {
+    display: none;
+  }
+
+  .component-tree__subitems {
+    gap: 3px;
+    margin: 0;
+    padding-left: 0;
+
+    &::before {
+      display: none;
+    }
+  }
+
   .component-tree__item {
     display: grid;
     grid-template-columns: 1fr;
@@ -464,6 +483,10 @@
     &::before {
       display: none;
     }
+  }
+
+  .component-tree__item--sub {
+    padding: 0;
   }
 
   .playground-runtime {
