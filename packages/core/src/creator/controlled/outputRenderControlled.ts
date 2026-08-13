@@ -131,6 +131,7 @@ export function initDom(target: HTMLElement) {
   input.setAttribute('autocomplete', 'off')
   input.setAttribute('autocorrect', 'off')
   input.setAttribute('spellcheck', 'false')
+  input.setAttribute('wrap', 'off')
 
   output.classList.add('shikitor-output')
   input.addEventListener('scroll', () => {

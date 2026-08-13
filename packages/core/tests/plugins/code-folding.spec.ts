@@ -123,4 +123,13 @@ describe('code folding scroll geometry', () => {
       thumbHeight: 24
     })
   })
+
+  it('maps wide source content onto a horizontal scrollbar', () => {
+    expect(resolveFoldScrollMetrics(1284, 606, 339, 592)).toEqual({
+      scrollTop: 339,
+      maxScrollTop: 678,
+      thumbTop: 156.29906542056074,
+      thumbHeight: 279.4018691588785
+    })
+  })
 })

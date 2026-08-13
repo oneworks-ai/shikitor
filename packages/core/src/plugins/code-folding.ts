@@ -310,6 +310,8 @@ export default definePlugin({
     const selectionLayer = document.createElement('div')
     const scrollTrack = document.createElement('div')
     const scrollThumb = document.createElement('div')
+    const horizontalScrollTrack = document.createElement('div')
+    const horizontalScrollThumb = document.createElement('div')
     const getCursorAbsolutePosition = shikitor._getCursorAbsolutePosition.bind(shikitor)
     const collapsed = new Set<number>()
     let ranges: FoldRange[] = []
@@ -317,17 +319,22 @@ export default definePlugin({
     let renderFrame: number | undefined
     let renderPending = true
     let visualMaxScrollTop = 0
+    let visualMaxScrollLeft = 0
     const collapseLabel = options.collapseLabel ?? 'Collapse block'
     const expandLabel = options.expandLabel ?? 'Expand block'
 
     target.classList.add('shikitor--code-folding')
     target.classList.add('shikitor--fold-rendering')
     selectionLayer.className = 'shikitor-fold-selection'
-    scrollTrack.className = 'shikitor-fold-scrollbar'
+    scrollTrack.className = 'shikitor-fold-scrollbar shikitor-fold-scrollbar--vertical'
     scrollThumb.className = 'shikitor-fold-scrollbar__thumb'
+    horizontalScrollTrack.className = 'shikitor-fold-scrollbar shikitor-fold-scrollbar--horizontal'
+    horizontalScrollThumb.className = 'shikitor-fold-scrollbar__thumb'
     scrollTrack.hidden = true
+    horizontalScrollTrack.hidden = true
     scrollTrack.append(scrollThumb)
-    container.append(selectionLayer, scrollTrack)
+    horizontalScrollTrack.append(horizontalScrollThumb)
+    container.append(selectionLayer, scrollTrack, horizontalScrollTrack)
 
     function isLineHidden(line: number) {
       return ranges.some(range =>
@@ -352,7 +359,34 @@ export default definePlugin({
         .filter(line => !isLineHidden(line))
     }
 
+    function syncHorizontalScroll(requestedScrollLeft = input.scrollLeft) {
+      const viewportWidth = container.clientWidth
+      // The textarea retains hidden source rows, so its scrollWidth can be
+      // wider than the folded document. The rendered output is the visual
+      // source of truth for horizontal geometry, just like visibleLines() is
+      // for the vertical axis.
+      const contentWidth = output.scrollWidth
+      const trackWidth = Math.max(0, viewportWidth - 14)
+      const metrics = resolveFoldScrollMetrics(
+        contentWidth,
+        viewportWidth,
+        requestedScrollLeft,
+        trackWidth
+      )
+      visualMaxScrollLeft = metrics.maxScrollTop
+
+      if (input.scrollLeft !== metrics.scrollTop) input.scrollLeft = metrics.scrollTop
+      output.scrollLeft = metrics.scrollTop
+      target.style.setProperty('--shikitor-scroll-l', `${metrics.scrollTop}px`)
+      target.style.setProperty('--shikitor-offset-x', `-${metrics.scrollTop}px`)
+
+      horizontalScrollTrack.hidden = metrics.maxScrollTop === 0
+      horizontalScrollThumb.style.width = `${metrics.thumbHeight}px`
+      horizontalScrollThumb.style.transform = `translateX(${metrics.thumbTop}px)`
+    }
+
     function syncVisualScroll(requestedScrollTop = input.scrollTop) {
+      syncHorizontalScroll(input.scrollLeft)
       if (collapsed.size === 0) {
         visualMaxScrollTop = 0
         scrollTrack.hidden = true
@@ -613,29 +647,49 @@ export default definePlugin({
     }
     target.addEventListener('click', onClick)
     const onInputScroll = () => {
-      if (collapsed.size === 0) return
+      if (collapsed.size === 0) {
+        syncHorizontalScroll(input.scrollLeft)
+        return
+      }
       syncVisualScroll(input.scrollTop)
     }
     input.addEventListener('scroll', onInputScroll)
-    const normalizeWheelDelta = (event: WheelEvent) => {
+    const normalizeWheelDelta = (event: WheelEvent, delta: number) => {
       if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-        return event.deltaY * (parseFloat(getComputedStyle(input).lineHeight) || 22)
+        return delta * (parseFloat(getComputedStyle(input).lineHeight) || 22)
       }
       if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-        return event.deltaY * container.clientHeight
+        return delta * container.clientHeight
       }
-      return event.deltaY
+      return delta
     }
     const onWheel = (event: WheelEvent) => {
-      if (collapsed.size === 0 || event.deltaY === 0) return
-      const nextScrollTop = Math.min(
-        visualMaxScrollTop,
-        Math.max(0, input.scrollTop + normalizeWheelDelta(event))
-      )
-      if (nextScrollTop === input.scrollTop) return
-      event.preventDefault()
-      input.scrollTop = nextScrollTop
-      syncVisualScroll(nextScrollTop)
+      if (event.ctrlKey) return
+      let handled = false
+      const horizontalDelta = event.deltaX || (event.shiftKey ? event.deltaY : 0)
+      if (horizontalDelta !== 0 && visualMaxScrollLeft > 0) {
+        const nextScrollLeft = Math.min(
+          visualMaxScrollLeft,
+          Math.max(0, input.scrollLeft + normalizeWheelDelta(event, horizontalDelta))
+        )
+        if (nextScrollLeft !== input.scrollLeft) {
+          input.scrollLeft = nextScrollLeft
+          syncHorizontalScroll(nextScrollLeft)
+          handled = true
+        }
+      }
+      if (collapsed.size > 0 && event.deltaY !== 0 && !event.shiftKey) {
+        const nextScrollTop = Math.min(
+          visualMaxScrollTop,
+          Math.max(0, input.scrollTop + normalizeWheelDelta(event, event.deltaY))
+        )
+        if (nextScrollTop !== input.scrollTop) {
+          input.scrollTop = nextScrollTop
+          syncVisualScroll(nextScrollTop)
+          handled = true
+        }
+      }
+      if (handled) event.preventDefault()
     }
     container.addEventListener('wheel', onWheel, { passive: false })
     let scrollbarPointerId: number | undefined
@@ -674,6 +728,42 @@ export default definePlugin({
     scrollTrack.addEventListener('pointermove', onScrollbarPointerMove)
     scrollTrack.addEventListener('pointerup', onScrollbarPointerUp)
     scrollTrack.addEventListener('pointercancel', onScrollbarPointerUp)
+    let horizontalScrollbarPointerId: number | undefined
+    const scrollHorizontalFromPointer = (event: PointerEvent) => {
+      const rect = horizontalScrollTrack.getBoundingClientRect()
+      const thumbWidth = horizontalScrollThumb.getBoundingClientRect().width
+      const travel = Math.max(0, rect.width - thumbWidth)
+      const ratio = travel === 0
+        ? 0
+        : Math.min(1, Math.max(0, (event.clientX - rect.left - thumbWidth / 2) / travel))
+      const nextScrollLeft = ratio * visualMaxScrollLeft
+      input.scrollLeft = nextScrollLeft
+      syncHorizontalScroll(nextScrollLeft)
+    }
+    const onHorizontalScrollbarPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 || visualMaxScrollLeft === 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      horizontalScrollbarPointerId = event.pointerId
+      horizontalScrollTrack.setPointerCapture(event.pointerId)
+      scrollHorizontalFromPointer(event)
+    }
+    const onHorizontalScrollbarPointerMove = (event: PointerEvent) => {
+      if (horizontalScrollbarPointerId !== event.pointerId) return
+      event.preventDefault()
+      scrollHorizontalFromPointer(event)
+    }
+    const onHorizontalScrollbarPointerUp = (event: PointerEvent) => {
+      if (horizontalScrollbarPointerId !== event.pointerId) return
+      if (horizontalScrollTrack.hasPointerCapture(event.pointerId)) {
+        horizontalScrollTrack.releasePointerCapture(event.pointerId)
+      }
+      horizontalScrollbarPointerId = undefined
+    }
+    horizontalScrollTrack.addEventListener('pointerdown', onHorizontalScrollbarPointerDown)
+    horizontalScrollTrack.addEventListener('pointermove', onHorizontalScrollbarPointerMove)
+    horizontalScrollTrack.addEventListener('pointerup', onHorizontalScrollbarPointerUp)
+    horizontalScrollTrack.addEventListener('pointercancel', onHorizontalScrollbarPointerUp)
     const resizeObserver = new ResizeObserver(() => syncVisualScroll())
     resizeObserver.observe(container)
     let pointerAnchor: number | undefined
@@ -873,6 +963,10 @@ export default definePlugin({
       scrollTrack.removeEventListener('pointermove', onScrollbarPointerMove)
       scrollTrack.removeEventListener('pointerup', onScrollbarPointerUp)
       scrollTrack.removeEventListener('pointercancel', onScrollbarPointerUp)
+      horizontalScrollTrack.removeEventListener('pointerdown', onHorizontalScrollbarPointerDown)
+      horizontalScrollTrack.removeEventListener('pointermove', onHorizontalScrollbarPointerMove)
+      horizontalScrollTrack.removeEventListener('pointerup', onHorizontalScrollbarPointerUp)
+      horizontalScrollTrack.removeEventListener('pointercancel', onHorizontalScrollbarPointerUp)
       resizeObserver.disconnect()
       target.removeEventListener('pointerdown', onPointerDown, true)
       target.removeEventListener('pointermove', onPointerMove, true)
@@ -893,6 +987,7 @@ export default definePlugin({
       )
       selectionLayer.remove()
       scrollTrack.remove()
+      horizontalScrollTrack.remove()
       target.querySelectorAll<HTMLElement>(
         '.shikitor-fold-toggle, .shikitor-fold-placeholder, .shikitor-fold-suffix'
       )
