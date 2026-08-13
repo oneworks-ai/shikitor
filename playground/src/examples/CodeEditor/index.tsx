@@ -189,7 +189,7 @@ export default function CodeEditor() {
     'const editor = shikitor\n\neditor.'
   )
   const [editingCode, setEditingCode] = useState(
-    'import React from "react"\nimport {\n  definePlugin,\n  type Shikitor\n} from "@shikitor/core"\n\n/* Runtime integration */\nimport { Context } from "cordis"\n\nconst pluginName = "editor"\n\n// Optional development tooling\nimport { createLogger } from "./logger"\nimport "./editor.css"\n\n// Highlight matching brackets\n// Indent paired characters\n// Wrap selected text\n\nfunction configureEditor(editor: Shikitor, context: Context) {\n  createLogger(context, pluginName)\n  return definePlugin({ name: pluginName })\n}\n\nexport { configureEditor }'
+    'import React from "react"\nimport {\n  definePlugin,\n  type Shikitor\n} from "@shikitor/core"\n\n/* Runtime integration */\nimport { Context } from "cordis"\n\nconst pluginName = "editor"\n\n// Optional development tooling\nimport { createLogger } from "./logger"\nimport "./editor.css"\n\n// Highlight matching brackets\n// Indent paired characters\n// Wrap selected text\n\nfunction configureEditor(editor: Shikitor, context: Context, logger: ReturnType<typeof createLogger>, options: { enableFolding: boolean; preserveSelection: boolean }) {\n  logger.info("configure editor", { pluginName, enableFolding: options.enableFolding, preserveSelection: options.preserveSelection })\n  return definePlugin({ name: pluginName })\n}\n\nexport { configureEditor }'
   )
   const [behaviorCode, setBehaviorCode] = useState(
     'export function greet(name: string) {\n  return `Hello, ${name}!`\n}'
