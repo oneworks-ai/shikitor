@@ -63,7 +63,7 @@ export const WithoutCoreEditor = forwardRef<
       }
     }
     const emits = emitsRef.current
-    shikitor.ee.on('change', emits.change)
+    shikitor.context.on('shikitor/change', emits.change)
     emits.mounted(shikitor)
   }, [ref])
 
@@ -76,7 +76,7 @@ export const WithoutCoreEditor = forwardRef<
 
   const { vRef: valueRef } = useDefault(value, defaultValue, vRefHandle)
 
-  const optionRefHandle = useCallback((opts: Omit<ShikitorOptions, "plugins">) => {
+  const optionRefHandle = useCallback((opts: Omit<ShikitorOptions, 'plugins'>) => {
     const shikitor = shikitorRef.current
     if (!shikitor) return
 

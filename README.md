@@ -89,7 +89,30 @@ You can use `Tab` to indent the current line or selected lines, and use `Shift +
 
 ## Plugin system
 
-Building...
+Shikitor uses [Cordis](https://github.com/cordiverse/cordis) as its plugin runtime. Each editor owns an isolated Cordis context, exposed as `shikitor.context`. Plugins receive the editor through the `shikitor` service, while listeners and other effects are disposed automatically with the plugin fiber.
+
+```ts
+import { create, definePlugin } from '@shikitor/core'
+
+const wordCounter = definePlugin({
+  name: 'word-counter',
+  inject: ['shikitor'],
+  apply(ctx, config: { report(count: number): void }) {
+    ctx.on('shikitor/change', value => {
+      config.report(value.trim().split(/\s+/).filter(Boolean).length)
+    })
+  }
+})
+
+const shikitor = await create(document.querySelector('#app')!, {
+  plugins: [[wordCounter, { report: console.log }]]
+})
+
+// Cordis APIs remain available for dynamic plugins and services.
+await shikitor.context.plugin(wordCounter, { report: console.log })
+```
+
+Built-in lifecycle events use the `shikitor/*` namespace, including `change`, `cursor-change`, `selection-change`, `focus`, `blur`, keyboard events, and `dispose`. Feature plugins expose injectable services such as `shikitorPopup`, `shikitorCompletions`, and `shikitorSelectionTools`.
 
 ## License
 

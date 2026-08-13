@@ -1,0 +1,107 @@
+.shikitor--code-folding {
+  .shikitor-input::selection {
+    background: transparent;
+  }
+
+  .shikitor-output {
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .shikitor-gutter-line {
+    display: grid;
+    grid-template-columns: 20px auto;
+
+    &[hidden] {
+      display: none;
+    }
+  }
+
+  .shikitor-gutter-line-number {
+    grid-row: 1;
+    grid-column: 2;
+  }
+}
+
+.shikitor--code-folding.shikitor--fold-rendering {
+  .shikitor-output-lines,
+  > .shikitor-lines {
+    visibility: hidden;
+  }
+}
+
+.shikitor-fold-toggle {
+  display: grid;
+  position: relative;
+  z-index: 12;
+  grid-row: 1;
+  grid-column: 1;
+  align-self: center;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--shikitor-fg-color-op4, currentColor);
+  background: transparent;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--shikitor-fg-color, currentColor);
+    background: var(--shikitor-fg-color-op8, rgba(127, 127, 127, .2));
+  }
+
+  .shikitor-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+    line-height: 16px;
+    text-align: center;
+    font-variation-settings: 'FILL' 1, 'GRAD' 0;
+  }
+}
+
+.shikitor-fold-placeholder {
+  position: relative;
+  z-index: 12;
+  margin-left: .5ch;
+  padding: 0 .45ch;
+  border-radius: 4px;
+  color: var(--shikitor-fg-color-op3, currentColor);
+  background: var(--shikitor-fg-color-op8, rgba(127, 127, 127, .18));
+  font-style: italic;
+  pointer-events: auto;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--shikitor-fg-color, currentColor);
+    background: var(--shikitor-fg-color-op7, rgba(127, 127, 127, .28));
+  }
+}
+
+.shikitor-fold-suffix {
+  margin-left: .5ch;
+  font-style: normal;
+}
+
+.shikitor-fold-selection {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.shikitor-fold-selection__line {
+  --selection-start: 0ch;
+  --selection-end: 100%;
+
+  position: absolute;
+  right: calc(100% - var(--selection-end));
+  left: var(--selection-start);
+  height: var(--line-height);
+  background: rgba(124, 108, 242, .36);
+}

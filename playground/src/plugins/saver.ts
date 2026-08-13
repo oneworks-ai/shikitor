@@ -3,12 +3,14 @@ import { definePlugin } from '@shikitor/core'
 import { DEFAULT_CODE } from '../utils/analyzeHash'
 import { zipStr } from '../utils/zipStr'
 
-export default () => definePlugin({
+export default definePlugin({
   name: 'shikitor-saver',
-  onKeydown(e) {
-    if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault()
-      const code = this.value
+  inject: ['shikitor'],
+  apply(ctx) {
+    ctx.on('shikitor/keydown', event => {
+      if (event.key !== 's' || !(event.ctrlKey || event.metaKey)) return
+      event.preventDefault()
+      const code = ctx.shikitor.value
       const url = new URL(location.href)
 
       let newHashStr = ''
@@ -17,6 +19,6 @@ export default () => definePlugin({
       }
       url.hash = newHashStr
       history.pushState(null, '', url)
-    }
+    })
   }
 })

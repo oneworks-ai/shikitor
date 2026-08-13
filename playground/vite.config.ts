@@ -11,6 +11,9 @@ export default defineConfig({
   server: {
     port: 31971
   },
+  optimizeDeps: {
+    exclude: ['@shikitor/core']
+  },
   build: {
     rollupOptions: {
       external: ['shiki']

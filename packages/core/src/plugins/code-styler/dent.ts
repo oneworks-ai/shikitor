@@ -90,7 +90,7 @@ export function indent(
     : '\t'
   const insertStrItemLength = item.length
   if (startAtLineStart && start === end) {
-    const leadingSpaces = inferLineLeadingSpaces(start, tabSize)
+    const leadingSpaces = inferLineLeadingSpaces(start, tabSize) || tabSize
     const tabCount = ~~(leadingSpaces / tabSize)
     const tabCountRemainder = leadingSpaces % tabSize
     const tabCountRemainderSpaces = tabCountRemainder < 1

@@ -5,7 +5,7 @@ import type {
   LanguageSelector,
   ProviderResult,
   ResolvedTextRange,
-  ShikitorWithExtends
+  Shikitor
 } from '@shikitor/core'
 import { definePlugin } from '@shikitor/core'
 import type {} from '@shikitor/core/plugins/provide-popup'
@@ -69,11 +69,15 @@ declare module '@shikitor/core' {
   export interface SelectionToolsProvider {
     provideSelectionTools: (selectionText: string, selection: ResolvedTextRange) => ProviderResult<ToolList>
   }
-  export interface ShikitorProvideSelectionTools {
-    registerSelectionToolsProvider: (selector: LanguageSelector, provider: SelectionToolsProvider) => IDisposable
-  }
-  export interface ShikitorExtends {
-    'provide-selection-toolbox': ShikitorProvideSelectionTools
+}
+
+export interface ShikitorSelectionToolsService {
+  registerSelectionToolsProvider: (selector: LanguageSelector, provider: import('@shikitor/core').SelectionToolsProvider) => IDisposable
+}
+
+declare module 'cordis' {
+  interface Context {
+    shikitorSelectionTools: ShikitorSelectionToolsService
   }
 }
 
@@ -122,7 +126,8 @@ function toolItemTemplate(tool: ToolInner) {
 toolItemTemplate.prefix = `${'shikitor'}-popup-selection-toolbox-item`
 
 function showSelector(
-  shikitor: ShikitorWithExtends<'provide-popup'>,
+  shikitor: Shikitor,
+  mountPopup: import('@shikitor/core/plugins/provide-popup').ShikitorPopupService['mountPopup'],
   dom: HTMLElement,
   { activatable, direction, options, onClose, onSelect }: ToolInner & { type: 'select' } & { onClose?: () => void }
 ) {
@@ -134,7 +139,7 @@ function showSelector(
     popupOptions.remove()
     onClose?.()
   }
-  const popupOptions = shikitor.mountPopup({
+  const popupOptions = mountPopup({
     id: 'selector',
     position: 'absolute',
     width,
@@ -189,12 +194,11 @@ function showSelector(
   }
 }
 
-export default () =>
-  definePlugin({
-    name,
-    async install() {
-      const dependDefer = Promise.withResolvers<void>()
-      const dependDispose = this.depend(['provide-popup'], shikitor => {
+export default definePlugin({
+  name,
+  inject: ['shikitor', 'shikitorPopup'],
+  apply(ctx) {
+        const shikitor = ctx.shikitor
         const { optionsRef, selectionsRef } = shikitor
         const languageRef = derive({
           current: get => get(optionsRef).current.language
@@ -237,7 +241,7 @@ export default () =>
             })
           }
         })
-        const disposeSelectionToolsExtend = shikitor.extend('provide-selection-toolbox', {
+        ctx.provide('shikitorSelectionTools', {
           registerSelectionToolsProvider(selector, provider) {
             let providerDispose: Nullable<() => void>
             const { provideSelectionTools } = provider
@@ -300,8 +304,8 @@ export default () =>
               }
             }
           }
-        }).dispose
-        const disposeSelectionToolboxProvider = shikitor.registerPopupProvider({
+        })
+        const disposeSelectionToolboxProvider = ctx.shikitorPopup.registerPopupProvider({
           position: 'relative',
           placement: 'top',
           target: 'selection',
@@ -350,7 +354,7 @@ export default () =>
                           target.dataset['open'] = 'true'
                           toolStore.set(
                             uuid,
-                            showSelector(shikitor, target, {
+                            showSelector(shikitor, ctx.shikitorPopup.mountPopup, target, {
                               ...tool,
                               onClose: () => target.dataset['open'] = 'false'
                             })
@@ -366,20 +370,9 @@ export default () =>
             }]
           })
         }).dispose
-        dependDefer.resolve()
-        return {
-          dispose() {
-            disposeSelectionToolsExtend?.()
-            disposeSelectionToolboxProvider?.()
-            disposeScoped()
-          }
+        return () => {
+          disposeSelectionToolboxProvider?.()
+          disposeScoped()
         }
-      })
-      await dependDefer.promise
-      return {
-        dispose() {
-          dependDispose.dispose?.()
-        }
-      }
-    }
-  })
+  }
+})

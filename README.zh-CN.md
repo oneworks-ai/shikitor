@@ -89,7 +89,30 @@ const shikitor = create(document.getElementById('editor'), {
 
 ## 插件系统
 
-编写文档中...
+Shikitor 使用 [Cordis](https://github.com/cordiverse/cordis) 作为插件运行时。每个编辑器拥有独立的 Cordis Context，并通过 `shikitor.context` 暴露。插件通过 `shikitor` 服务获取编辑器实例；插件 Fiber 销毁时，监听器和其他副作用会自动回收。
+
+```ts
+import { create, definePlugin } from '@shikitor/core'
+
+const wordCounter = definePlugin({
+  name: 'word-counter',
+  inject: ['shikitor'],
+  apply(ctx, config: { report(count: number): void }) {
+    ctx.on('shikitor/change', value => {
+      config.report(value.trim().split(/\s+/).filter(Boolean).length)
+    })
+  }
+})
+
+const shikitor = await create(document.querySelector('#app')!, {
+  plugins: [[wordCounter, { report: console.log }]]
+})
+
+// 也可以直接使用 Cordis API 动态安装插件或服务。
+await shikitor.context.plugin(wordCounter, { report: console.log })
+```
+
+内置生命周期事件统一使用 `shikitor/*` 命名空间，包括 `change`、`cursor-change`、`selection-change`、`focus`、`blur`、键盘事件和 `dispose`。功能插件通过依赖注入提供 `shikitorPopup`、`shikitorCompletions`、`shikitorSelectionTools` 等服务。
 
 ## License
 

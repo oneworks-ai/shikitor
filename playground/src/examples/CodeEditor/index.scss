@@ -1,34 +1,285 @@
-.t-popup__content {
-  color: var(--bg) !important;
-}
-.code-editor {
-  --border-size: 1px;
-
+.code-editor-examples {
   display: flex;
   flex-direction: column;
-  position: absolute;
-  width: 60vw;
-  height: 80vh;
-  left: calc(20vw - var(--border-size) * 2);
-  top: calc(10vh - var(--border-size) * 2);
+  gap: 22px;
+}
 
-  background-color: var(--bg, black);
-  border-radius: 4px;
-  border: var(--border-size) solid rgba(0, 0, 0, .1);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, .2);
+.editor-frame {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 430px;
+  min-width: 0;
+  flex-direction: column;
   overflow: hidden;
-  transition: .1s;
-  .shikitor {
-    flex-grow: 1;
-    height: 0;
+  background: var(--editor-bg);
+  transition: background-color .2s ease;
+
+  > .shikitor {
+    flex: 1;
+    min-height: 0;
+    padding: 12px;
+    background: var(--editor-bg) !important;
+    font-size: 13px;
+    --line-height: 22px;
   }
 }
-body.fullview #app > .code-editor {
-  width: 100vw;
-  height: 100vh;
-  left: 0;
-  top: 0;
-  border-radius: 0;
-  box-shadow: 0 0 16px rgba(0, 0, 0, .2);
-  border: none;
+
+.editor-frame--folding .shikitor:not(.shikitor--code-folding) {
+  .shikitor-output-lines,
+  > .shikitor-lines {
+    visibility: hidden;
+  }
+}
+
+.color-control {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 8px;
+
+  input[type='color'] {
+    width: 38px;
+    height: 32px;
+    padding: 3px;
+    border: 1px solid var(--pg-border);
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+
+    &::-webkit-color-swatch {
+      border: 0;
+      border-radius: 3px;
+    }
+  }
+}
+
+.shikitor-ghost-text {
+  position: absolute;
+  z-index: 9;
+  color: color-mix(in srgb, var(--editor-fg), transparent 58%);
+  font-family: var(--font-family, monospace), serif;
+  font-size: inherit;
+  font-style: italic;
+  line-height: var(--line-height);
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
+.case-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid #e4e0fb;
+  border-radius: 8px;
+  color: #70669c;
+  background: #f7f5ff;
+  font-size: 10px;
+  line-height: 1.45;
+
+  .shikitor-icon {
+    flex: 0 0 auto;
+    color: var(--pg-accent);
+    font-size: 15px;
+  }
+}
+
+.demo-line-widget {
+  padding: 8px 14px 10px 0;
+}
+
+.demo-line-widget__surface {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--editor-fg), transparent 78%);
+  border-left: 3px solid #7c6cf2;
+  border-radius: 7px;
+  color: var(--editor-fg);
+  background: color-mix(in srgb, var(--editor-bg), var(--editor-fg) 7%);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .14);
+  font-family: Inter, ui-sans-serif, sans-serif;
+}
+
+.demo-line-widget__header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-bottom: 1px solid color-mix(in srgb, var(--editor-fg), transparent 88%);
+
+  .shikitor-icon {
+    color: #a99cfb;
+    font-size: 15px;
+  }
+
+  strong {
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  small {
+    margin-left: auto;
+    color: color-mix(in srgb, var(--editor-fg), transparent 48%);
+    font-size: 9px;
+  }
+}
+
+.demo-line-widget--comment {
+  p {
+    margin: 0;
+    padding: 11px;
+    color: color-mix(in srgb, var(--editor-fg), transparent 14%);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+}
+
+.demo-line-widget__actions {
+  display: flex;
+  gap: 7px;
+  padding: 0 11px 10px;
+
+  button {
+    padding: 4px 9px;
+    border: 1px solid color-mix(in srgb, var(--editor-fg), transparent 76%);
+    border-radius: 5px;
+    color: var(--editor-fg);
+    background: transparent;
+    font-size: 9px;
+    cursor: pointer;
+
+    &:hover {
+      border-color: #9183ef;
+      color: #c4bcff;
+    }
+  }
+}
+
+.demo-line-widget__usage {
+  display: grid;
+  grid-template-columns: 80px 42px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border-bottom: 1px solid color-mix(in srgb, var(--editor-fg), transparent 91%);
+  font-size: 9px;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  code,
+  span {
+    color: color-mix(in srgb, var(--editor-fg), transparent 46%);
+  }
+
+  b {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--editor-fg), transparent 14%);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 450;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.demo-gutter-action,
+.demo-gutter-badge {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--editor-fg), transparent 72%);
+  color: color-mix(in srgb, var(--editor-fg), transparent 20%);
+  background: color-mix(in srgb, var(--editor-bg), var(--editor-fg) 10%);
+  cursor: pointer;
+
+  &:hover {
+    border-color: #9183ef;
+    color: #d0caff;
+    background: color-mix(in srgb, var(--editor-bg), #7c6cf2 25%);
+  }
+}
+
+.demo-gutter-decoration {
+  line-height: 1;
+}
+
+.demo-gutter-action {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+
+  .shikitor-icon {
+    font-size: 13px;
+    line-height: 1;
+  }
+}
+
+.demo-gutter-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+}
+
+.editor-frame--cursor {
+  .shikitor {
+    --shikitor-caret-color: var(--demo-cursor-color);
+  }
+
+  .shikitor-cursor::after,
+  .shikitor-cursor.shikitor-cursor--visible::after {
+    visibility: visible !important;
+    background: var(--demo-cursor-color);
+    animation: playground-cursor-blink var(--demo-cursor-blink) step-end infinite;
+  }
+
+  .shikitor-cursor__username::before {
+    border-top-color: var(--demo-cursor-color);
+  }
+
+  .shikitor-cursor__username::after {
+    background: var(--demo-cursor-color);
+  }
+}
+
+.editor-frame--cursor-line .shikitor-cursor {
+  --cursor-width: var(--demo-cursor-size);
+}
+
+.editor-frame--cursor-block .shikitor-cursor,
+.editor-frame--cursor-underline .shikitor-cursor {
+  --cursor-width: 1ch;
+}
+
+.editor-frame--cursor-block .shikitor-cursor::after {
+  opacity: .62;
+}
+
+.editor-frame--cursor-underline .shikitor-cursor::after {
+  top: calc(100% - var(--demo-cursor-size));
+  height: var(--demo-cursor-size);
+}
+
+@keyframes playground-cursor-blink {
+  0%,
+  46% {
+    opacity: 1;
+  }
+
+  47%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .editor-frame {
+    min-height: 320px;
+  }
 }

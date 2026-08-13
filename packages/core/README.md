@@ -15,3 +15,9 @@ npm install @shikitor/core
 # If you are using pnpm
 pnpm install @shikitor/core
 ```
+
+## Plugins
+
+The plugin runtime is powered by [Cordis](https://github.com/cordiverse/cordis). Define native Cordis plugins with `definePlugin()`, inject the editor as `ctx.shikitor`, and listen to editor lifecycle events through the `shikitor/*` namespace. The editor context is available as `shikitor.context` for dynamic plugin installation, services, nested plugins, and effect cleanup.
+
+Plugins that require configuration are passed as `[plugin, config]` tuples in `ShikitorOptions.plugins`.

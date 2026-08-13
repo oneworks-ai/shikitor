@@ -9,24 +9,27 @@ const symmetryOperatorMapping: Record<string, string> = {
   "'": "'",
   '"': '"'
 }
+
 function isSymmetryOperatorKey(key: string) {
   return key in symmetryOperatorMapping
 }
-const name = 'symmetry-operator'
-export default () => {
-  return definePlugin({
-    name,
-    onKeydown(e) {
-      const textarea = e.target
-      const [{ start, end }] = this.selections ?? [{}]
+
+export default definePlugin({
+  name: 'symmetry-operator',
+  inject: ['shikitor'],
+  apply(ctx) {
+    const shikitor = ctx.shikitor
+    ctx.on('shikitor/keydown', event => {
+      const textarea = event.target
+      const [{ start, end }] = shikitor.selections ?? [{}]
       if (start.offset === end.offset) return
-      if (isSymmetryOperatorKey(e.key) && !(e.metaKey || e.ctrlKey)) {
-        textarea.setRangeText(symmetryOperatorMapping[e.key], end.offset, end.offset)
-        textarea.setRangeText(e.key, start.offset, start.offset)
+      if (isSymmetryOperatorKey(event.key) && !(event.metaKey || event.ctrlKey)) {
+        textarea.setRangeText(symmetryOperatorMapping[event.key], end.offset, end.offset)
+        textarea.setRangeText(event.key, start.offset, start.offset)
         textarea.dispatchEvent(new Event('input'))
-        this.focus(end.offset + 2)
-        e.preventDefault()
+        shikitor.focus(end.offset + 2)
+        event.preventDefault()
       }
-    }
-  })
-}
+    })
+  }
+})

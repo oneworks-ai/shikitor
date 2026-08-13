@@ -11,11 +11,6 @@ function add(a, b) {
 export function analyzeHash() {
   let code = DEFAULT_CODE
   const [type, content] = location.hash.slice(1).split('/')
-  if (content === undefined) {
-    // undefined behavior, reset hash to empty
-    // and don't jump page
-    location.hash = ''
-  }
   switch (type) {
     case 'zip-code':
       try {

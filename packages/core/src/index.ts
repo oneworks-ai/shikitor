@@ -1,4 +1,5 @@
 export * from './base'
+export * from './context'
 export { create } from './creator'
 export * from './editor'
 export * from './plugin'

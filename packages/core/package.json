@@ -13,6 +13,9 @@
     "./types": "./src/types.ts",
     "./utils": "./src/utils/index.ts",
     "./utils/valtio": "./src/utils/valtio/index.ts",
+    "./plugins/code-folding": "./src/plugins/code-folding.ts",
+    "./plugins/gutter-decorations": "./src/plugins/gutter-decorations.ts",
+    "./plugins/line-widgets": "./src/plugins/line-widgets.ts",
     "./plugins/*": ["./src/plugins/*/index.ts", "./src/plugins/*.ts"]
   },
   "repository": {
@@ -24,6 +27,7 @@
   "dependencies": {
     "@shikijs/core": "^1.12.1",
     "@shikijs/transformers": "^1.12.1",
+    "cordis": "^4.0.0-rc.8",
     "derive-valtio": "^0.1.0",
     "shiki": "^1.12.1",
     "valtio": "^1.13.2"

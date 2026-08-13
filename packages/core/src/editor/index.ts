@@ -1,54 +1,15 @@
-import type { DecorationItem, ResolvedPosition } from '@shikijs/core'
+import type { DecorationItem } from '@shikijs/core'
 import type { BundledLanguage, BundledTheme } from 'shiki'
 
 import type { _KeyboardEvent, RefObject, TextRange } from '../base'
-import type { ShikitorPlugin } from '../plugin'
-import type { Awaitable, Pretty, RecursiveReadonly, U2I } from '../types'
+import type { ShikitorContext } from '../context'
+import type { InputShikitorPlugin } from '../plugin'
+import type { RecursiveReadonly } from '../types'
 import type { UpdateDispatcher } from '../utils/callUpdateDispatcher'
 import type { RawTextHelper } from '../utils/getRawTextHelper'
-import type { Cursor, IDisposable, ResolvedCursor, ResolvedSelection, Selection } from './base'
-import type { EventEmitter, EventMap } from './base.eventEmitter'
+import type { Cursor, ResolvedCursor, ResolvedSelection, Selection } from './base'
 
 export * from './base'
-
-export interface ShikitorExtends {
-}
-
-type ShikitorExtendable = keyof ShikitorExtends
-
-// @dprint-ignore
-type ShikitorExtend<Keys extends ShikitorExtendable> = Pretty<U2I<
-  Keys extends infer K extends ShikitorExtendable
-    ? ShikitorExtends[K]
-    : never
->>
-
-export type ShikitorWithExtends<
-  Keys extends ShikitorExtendable,
-  ThisKeys extends ShikitorExtendable = never
-> =
-  & Shikitor<ThisKeys>
-  & ShikitorExtend<Keys>
-
-interface Depend<
-  ThisKeys extends ShikitorExtendable
-> {
-  <Keys extends Exclude<ShikitorExtendable, ThisKeys>>(
-    this: Shikitor<ThisKeys>,
-    keys: Keys[],
-    listener: (
-      shikitor: ShikitorWithExtends<Keys, ThisKeys>
-    ) => void | IDisposable
-  ): IDisposable
-}
-
-export interface ShikitorEventMap extends EventMap {
-  change(value: string): Awaitable<void>
-  install(name: string | undefined, shikitor: Shikitor): Awaitable<void>
-  dispose(name: string | undefined): Awaitable<void>
-  extended(name: ShikitorExtendable | (string & {}) | undefined): Awaitable<void>
-  contracted(name: ShikitorExtendable | (string & {}) | undefined): Awaitable<void>
-}
 
 interface ShikitorEvents {
   onChange?: (value: string) => void
@@ -61,21 +22,19 @@ interface ShikitorEvents {
   onKeyup?: (e: _KeyboardEvent) => void
 }
 
-export type InputShikitorPlugin =
-  /**
-   * [{}, Promise.resolve({}), import()]
-   */
-  | Awaitable<ShikitorPlugin>
-  /**
-   * [() => ({}), () => Promise.resolve({}), () => import()]
-   */
-  | (() => Awaitable<ShikitorPlugin>)
-
 export interface ShikitorOptions extends ShikitorEvents {
   value?: string
-  cursor?: ResolvedPosition
+  cursor?: Cursor
   language?: BundledLanguage
   lineNumbers?: 'on' | 'off'
+  /**
+   * @default true
+   */
+  highlightCurrentLine?: boolean
+  /**
+   * Background color used to highlight the active line.
+   */
+  currentLineHighlightColor?: string
   /**
    * @default false
    */
@@ -111,26 +70,12 @@ export interface ShikitorInternal {
     cursor: ResolvedCursor,
     lineOffset?: number
   ) => { x: number; y: number }
-  /**
-   * @internal
-   */
-  ee: EventEmitter<ShikitorEventMap>
-}
-
-export interface ShikitorSupportExtend<
-  Keys extends ShikitorExtendable = never
-> {
-  depend: Depend<Keys>
-  extend: <K extends ShikitorExtendable>(
-    this: Shikitor<Keys>,
-    key: K,
-    obj: ShikitorExtend<K>
-  ) => IDisposable
 }
 
 export interface ShikitorSupportPlugin {
+  readonly context: ShikitorContext
   upsertPlugin: (this: Shikitor, plugin: InputShikitorPlugin, index?: number) => Promise<number>
-  removePlugin: (this: Shikitor, index: number) => void
+  removePlugin: (this: Shikitor, index: number) => Promise<void>
 }
 
 export interface ShikitorBase {
@@ -142,9 +87,7 @@ export interface ShikitorBase {
 
   options:
     & RecursiveReadonly<Omit<ShikitorOptions, 'plugins'>>
-    & RecursiveReadonly<{
-      plugins: ShikitorPlugin[]
-    }>
+    & { readonly plugins: readonly InputShikitorPlugin[] }
   readonly optionsRef: RefObject<ShikitorOptions>
   updateOptions: UpdateDispatcher<RecursiveReadonly<ShikitorOptions>, [], Promise<void>, Shikitor['options']>
 
@@ -161,7 +104,5 @@ export interface ShikitorBase {
   readonly rawTextHelper: RawTextHelper
 }
 
-export interface Shikitor<
-  Keys extends ShikitorExtendable = never
-> extends ShikitorBase, ShikitorSupportExtend<Keys>, ShikitorSupportPlugin, ShikitorInternal, Disposable {
+export interface Shikitor extends ShikitorBase, ShikitorSupportPlugin, ShikitorInternal, Disposable {
 }
