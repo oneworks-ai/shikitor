@@ -39,6 +39,14 @@ import ghostText from './plugins/ghost-text'
 
 const noPlugins: InputShikitorPlugin[] = []
 
+function loadedPluginNames(plugins: readonly InputShikitorPlugin[]) {
+  return [...new Set(plugins.flatMap(input => {
+    const plugin = Array.isArray(input) ? input[0] : input
+    const name = (plugin as { name?: unknown }).name
+    return typeof name === 'string' && name ? [name] : []
+  }))]
+}
+
 const themePairs = {
   github: {
     icon: 'code',
@@ -516,8 +524,56 @@ export default function CodeEditor() {
       </ComponentCase>
 
       <ComponentCase
-        id='code-editor-cursor'
+        id='code-editor-states'
         index='02'
+        title={t('code.states.title')}
+        description={t('code.states.description')}
+        tags={['Behavior']}
+        preview={(
+          <EditorFrame colors={behaviorColors}>
+            <WithoutCoreEditor
+              create={shikitorCreate}
+              value={behaviorEmpty ? '' : behaviorCode}
+              onChange={setBehaviorCode}
+              options={behaviorOptions}
+              plugins={noPlugins}
+              onColorChange={setBehaviorColors}
+            />
+          </EditorFrame>
+        )}
+      >
+        <SwitchField label={t('code.lineNumbers')} description={t('code.states.lineNumbersHelp')}>
+          <Switch
+            size='small'
+            value={behaviorLineNumbers}
+            onChange={value => queries.set('code-editor.states.line-numbers', String(value))}
+          />
+        </SwitchField>
+        <SwitchField label={t('code.states.readOnly')} description={t('code.states.readOnlyHelp')}>
+          <Switch
+            size='small'
+            value={behaviorReadOnly}
+            onChange={value => queries.set('code-editor.states.read-only', String(value))}
+          />
+        </SwitchField>
+        <SwitchField label={t('code.states.empty')} description={t('code.states.emptyHelp')}>
+          <Switch
+            size='small'
+            value={behaviorEmpty}
+            onChange={value => queries.set('code-editor.states.empty', String(value))}
+          />
+        </SwitchField>
+        <ConfigField label={t('code.states.placeholder')} description={t('code.states.placeholderHelp')}>
+          <Input
+            value={behaviorPlaceholder}
+            onChange={value => queries.set('code-editor.states.placeholder', value)}
+          />
+        </ConfigField>
+      </ComponentCase>
+
+      <ComponentCase
+        id='code-editor-cursor'
+        index='03'
         title={t('code.cursor.title')}
         description={t('code.cursor.description')}
         tags={['Presence', 'Interaction']}
@@ -637,10 +693,11 @@ export default function CodeEditor() {
 
       <ComponentCase
         id='code-editor-completions'
-        index='03'
+        index='04'
         title={t('code.completion.title')}
         description={t('code.completion.description')}
         tags={['Completion', 'Cordis']}
+        plugins={loadedPluginNames(completionPlugins)}
         preview={(
           <EditorFrame colors={completionColors} className='editor-frame--completion'>
             <WithoutCoreEditor
@@ -687,10 +744,11 @@ export default function CodeEditor() {
 
       <ComponentCase
         id='code-editor-editing'
-        index='04'
+        index='05'
         title={t('code.editing.title')}
         description={t('code.editing.description')}
         tags={['Keyboard', 'Plugin']}
+        plugins={loadedPluginNames(editingPlugins)}
         preview={(
           <EditorFrame
             colors={editingColors}
@@ -744,10 +802,11 @@ export default function CodeEditor() {
 
       <ComponentCase
         id='code-editor-line-widgets'
-        index='05'
+        index='06'
         title={t('code.widgets.title')}
         description={t('code.widgets.description')}
         tags={['View zone', 'Cordis']}
+        plugins={loadedPluginNames(lineWidgetPlugins)}
         preview={(
           <EditorFrame colors={lineWidgetColors}>
             <WithoutCoreEditor
@@ -799,10 +858,11 @@ export default function CodeEditor() {
 
       <ComponentCase
         id='code-editor-gutter-decorations'
-        index='06'
+        index='07'
         title={t('code.gutter.title')}
         description={t('code.gutter.description')}
         tags={['Gutter', 'Cordis']}
+        plugins={loadedPluginNames(gutterDecorationPlugins)}
         preview={(
           <EditorFrame colors={gutterColors}>
             <WithoutCoreEditor
@@ -849,53 +909,6 @@ export default function CodeEditor() {
         </div>
       </ComponentCase>
 
-      <ComponentCase
-        id='code-editor-states'
-        index='07'
-        title={t('code.states.title')}
-        description={t('code.states.description')}
-        tags={['Behavior']}
-        preview={(
-          <EditorFrame colors={behaviorColors}>
-            <WithoutCoreEditor
-              create={shikitorCreate}
-              value={behaviorEmpty ? '' : behaviorCode}
-              onChange={setBehaviorCode}
-              options={behaviorOptions}
-              plugins={noPlugins}
-              onColorChange={setBehaviorColors}
-            />
-          </EditorFrame>
-        )}
-      >
-        <SwitchField label={t('code.lineNumbers')} description={t('code.states.lineNumbersHelp')}>
-          <Switch
-            size='small'
-            value={behaviorLineNumbers}
-            onChange={value => queries.set('code-editor.states.line-numbers', String(value))}
-          />
-        </SwitchField>
-        <SwitchField label={t('code.states.readOnly')} description={t('code.states.readOnlyHelp')}>
-          <Switch
-            size='small'
-            value={behaviorReadOnly}
-            onChange={value => queries.set('code-editor.states.read-only', String(value))}
-          />
-        </SwitchField>
-        <SwitchField label={t('code.states.empty')} description={t('code.states.emptyHelp')}>
-          <Switch
-            size='small'
-            value={behaviorEmpty}
-            onChange={value => queries.set('code-editor.states.empty', String(value))}
-          />
-        </SwitchField>
-        <ConfigField label={t('code.states.placeholder')} description={t('code.states.placeholderHelp')}>
-          <Input
-            value={behaviorPlaceholder}
-            onChange={value => queries.set('code-editor.states.placeholder', value)}
-          />
-        </ConfigField>
-      </ComponentCase>
     </div>
   )
 }

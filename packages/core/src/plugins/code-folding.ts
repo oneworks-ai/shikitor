@@ -76,6 +76,82 @@ export function shouldUseFoldVisualHorizontalScroll(
   return hasCollapsedRange && visualContentWidth > inputContentWidth
 }
 
+export interface FoldVisualBoundary {
+  offset: number
+  x: number
+}
+
+export function resolveFoldVisualOffset(
+  boundaries: readonly FoldVisualBoundary[],
+  x: number
+) {
+  if (boundaries.length === 0) return undefined
+  return boundaries.reduce((closest, boundary) =>
+    Math.abs(boundary.x - x) < Math.abs(closest.x - x) ? boundary : closest
+  ).offset
+}
+
+export type FoldVisualNavigationDirection = 'backward' | 'forward'
+
+function orderedFoldVisualBoundaries(boundaries: readonly FoldVisualBoundary[]) {
+  return boundaries
+    .filter(boundary => Number.isFinite(boundary.x) && Number.isFinite(boundary.offset))
+    .map((boundary, order) => ({ ...boundary, order }))
+    .sort((left, right) => left.x - right.x || left.order - right.order)
+    .filter((boundary, index, ordered) => {
+      const previous = ordered[index - 1]
+      return !previous || previous.x !== boundary.x || previous.offset !== boundary.offset
+    })
+}
+
+/**
+ * Move one visual caret stop through a composed folded line.
+ *
+ * A placeholder contributes two stops: the source offset before its hidden
+ * body and the source offset after it. Moving between those stops therefore
+ * treats the complete hidden source range as one keyboard-addressable unit,
+ * while adjacent visible suffix text continues character by character.
+ */
+export function resolveFoldVisualKeyboardOffset(
+  boundaries: readonly FoldVisualBoundary[],
+  currentOffset: number,
+  direction: FoldVisualNavigationDirection
+) {
+  const ordered = orderedFoldVisualBoundaries(boundaries)
+  if (ordered.length === 0) return undefined
+
+  const matches = ordered
+    .map((boundary, index) => ({ boundary, index }))
+    .filter(({ boundary }) => boundary.offset === currentOffset)
+  if (matches.length > 0) {
+    const currentIndex = direction === 'forward'
+      ? matches[matches.length - 1].index
+      : matches[0].index
+    const step = direction === 'forward' ? 1 : -1
+    for (
+      let index = currentIndex + step;
+      index >= 0 && index < ordered.length;
+      index += step
+    ) {
+      if (ordered[index].offset !== currentOffset) return ordered[index].offset
+    }
+    return undefined
+  }
+
+  // Programmatic cursors may still point inside hidden source. Snap them to
+  // the corresponding side of the placeholder instead of exposing a hidden
+  // row or expanding the range.
+  const candidates = ordered.filter(boundary => direction === 'forward'
+    ? boundary.offset > currentOffset
+    : boundary.offset < currentOffset)
+  if (candidates.length === 0) return undefined
+  return direction === 'forward'
+    ? candidates.reduce((closest, boundary) =>
+        boundary.offset < closest.offset ? boundary : closest).offset
+    : candidates.reduce((closest, boundary) =>
+        boundary.offset > closest.offset ? boundary : closest).offset
+}
+
 const closingBracket: Record<string, string> = {
   '(': ')',
   '[': ']',
@@ -467,6 +543,35 @@ export default definePlugin({
         && cursor.line > range.startLine
         && cursor.line <= range.endLine
       )
+      if (hiddenRange) {
+        const outputLine = output.querySelector<HTMLElement>(
+          `[data-line="${hiddenRange.startLine}"]`
+        )
+        if (outputLine) {
+          const geometry = visualGeometry(outputLine)
+          const exactBoundary = geometry.boundaries.find(boundary => boundary.offset === cursor.offset)
+          const placeholder = geometry.placeholders.find(element => {
+            const start = Number(element.dataset.foldSourceStart)
+            const end = Number(element.dataset.foldSourceEnd)
+            return cursor.offset >= start && cursor.offset <= end
+          })
+          const placeholderBoundary = placeholder && (() => {
+            const start = Number(placeholder.dataset.foldSourceStart)
+            const end = Number(placeholder.dataset.foldSourceEnd)
+            const rect = placeholder.getBoundingClientRect()
+            return cursor.offset - start <= end - cursor.offset ? rect.left : rect.right
+          })()
+          const x = exactBoundary?.x ?? placeholderBoundary
+          if (x !== undefined) {
+            const containerRect = container.getBoundingClientRect()
+            const lineRect = outputLine.getBoundingClientRect()
+            return {
+              x: x - containerRect.left + visualScrollLeft,
+              y: lineRect.bottom - containerRect.top + input.scrollTop + lineOffset * lineRect.height
+            }
+          }
+        }
+      }
       const visualCursor = hiddenRange
         ? shikitor.rawTextHelper.resolvePosition({
             line: hiddenRange.startLine,
@@ -495,7 +600,89 @@ export default definePlugin({
       }
       shikitor.selectionsRef.current[0] = selection
       shikitor.optionsRef.current.cursor = shikitor.rawTextHelper.resolvePosition(focus)
+      // The native textarea is visually transparent and the plugin owns the
+      // folded selection surface. Emit a selectionchange so the core model
+      // and this surface observe every pointer-drag step consistently.
+      document.dispatchEvent(new Event('selectionchange'))
       renderSelection()
+    }
+
+    interface VisualTextSegment {
+      end: number
+      node: Text
+      start: number
+    }
+
+    function textOffsetWithin(root: Element, targetNode: Text) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      let offset = 0
+      let node = walker.nextNode()
+      while (node) {
+        if (node === targetNode) return offset
+        offset += node.textContent?.length ?? 0
+        node = walker.nextNode()
+      }
+      return offset
+    }
+
+    function sourceSegmentForTextNode(node: Text, outputLine: HTMLElement): VisualTextSegment {
+      const owner = node.parentElement?.closest<HTMLElement>('[data-fold-source-start]')
+      if (owner) {
+        const ownerStart = Number(owner.dataset.foldSourceStart)
+        const start = ownerStart + textOffsetWithin(owner, node)
+        return { node, start, end: start + (node.textContent?.length ?? 0) }
+      }
+
+      const line = Number(outputLine.dataset.line) || 1
+      const lineStart = shikitor.rawTextHelper.lineStart({ line, character: 0 })
+      // Shiki's whitespace transformer can give a separated space token and
+      // the following syntax token the same source-position class. Walking
+      // the rendered text itself preserves every visual character stop and
+      // prevents keyboard navigation from skipping the adjacent token.
+      const start = lineStart + textOffsetWithin(outputLine, node)
+      return { node, start, end: start + (node.textContent?.length ?? 0) }
+    }
+
+    function textBoundaryX(node: Text, character: number) {
+      const range = document.createRange()
+      if (character === 0) {
+        range.selectNodeContents(node)
+        return range.getBoundingClientRect().left
+      }
+      range.setStart(node, 0)
+      range.setEnd(node, character)
+      return range.getBoundingClientRect().right
+    }
+
+    function visualGeometry(outputLine: HTMLElement) {
+      const boundaries: FoldVisualBoundary[] = []
+      const segments: VisualTextSegment[] = []
+      const walker = document.createTreeWalker(outputLine, NodeFilter.SHOW_TEXT)
+      let node = walker.nextNode() as Text | null
+      while (node) {
+        if (!node.parentElement?.closest('.shikitor-fold-placeholder')) {
+          const segment = sourceSegmentForTextNode(node, outputLine)
+          segments.push(segment)
+          const length = node.textContent?.length ?? 0
+          for (let character = 0; character <= length; character++) {
+            boundaries.push({
+              x: textBoundaryX(node, character),
+              offset: segment.start + character
+            })
+          }
+        }
+        node = walker.nextNode() as Text | null
+      }
+
+      const placeholders = [...outputLine.querySelectorAll<HTMLElement>(
+        '.shikitor-fold-placeholder[data-fold-source-start][data-fold-source-end]'
+      )]
+      for (const placeholder of placeholders) {
+        const rect = placeholder.getBoundingClientRect()
+        boundaries.push({ x: rect.left, offset: Number(placeholder.dataset.foldSourceStart) })
+        boundaries.push({ x: rect.right, offset: Number(placeholder.dataset.foldSourceEnd) })
+      }
+      return { boundaries, placeholders, segments }
     }
 
     function pointerPosition(event: PointerEvent) {
@@ -507,6 +694,11 @@ export default definePlugin({
         Math.max(0, Math.floor((event.clientY - rect.top + input.scrollTop) / lineHeight))
       )
       const line = lines[visibleIndex] ?? 1
+      const outputLine = output.querySelector<HTMLElement>(`[data-line="${line}"]`)
+      if (outputLine?.querySelector('.shikitor-fold-placeholder')) {
+        const offset = resolveFoldVisualOffset(visualGeometry(outputLine).boundaries, event.clientX)
+        if (offset !== undefined) return shikitor.rawTextHelper.resolvePosition(offset)
+      }
       const lineText = shikitor.rawTextHelper.line({ line, character: 0 })
       const x = Math.max(0, event.clientX - rect.left + visualScrollLeft)
       let low = 0
@@ -531,6 +723,38 @@ export default definePlugin({
       return shikitor.rawTextHelper.resolvePosition({ line, character })
     }
 
+    function appendSelectionRect(rect: DOMRect) {
+      if (rect.width <= 0 || rect.height <= 0) return
+      const containerRect = container.getBoundingClientRect()
+      const marker = document.createElement('div')
+      marker.className = 'shikitor-fold-selection__line shikitor-fold-selection__line--visual'
+      marker.style.left = `${rect.left - containerRect.left}px`
+      marker.style.top = `${rect.top - containerRect.top}px`
+      marker.style.width = `${rect.width}px`
+      marker.style.height = `${rect.height}px`
+      selectionLayer.append(marker)
+    }
+
+    function renderVisualSelection(outputLine: HTMLElement, start: number, end: number) {
+      const geometry = visualGeometry(outputLine)
+      for (const segment of geometry.segments) {
+        const segmentStart = Math.max(start, segment.start)
+        const segmentEnd = Math.min(end, segment.end)
+        if (segmentStart >= segmentEnd) continue
+        const range = document.createRange()
+        range.setStart(segment.node, segmentStart - segment.start)
+        range.setEnd(segment.node, segmentEnd - segment.start)
+        for (const rect of range.getClientRects()) appendSelectionRect(rect)
+      }
+      for (const placeholder of geometry.placeholders) {
+        const placeholderStart = Number(placeholder.dataset.foldSourceStart)
+        const placeholderEnd = Number(placeholder.dataset.foldSourceEnd)
+        if (start < placeholderEnd && end > placeholderStart) {
+          appendSelectionRect(placeholder.getBoundingClientRect())
+        }
+      }
+    }
+
     function renderSelection() {
       selectionLayer.replaceChildren()
       const start = Math.min(input.selectionStart, input.selectionEnd)
@@ -549,6 +773,11 @@ export default definePlugin({
 
       for (let line = startVisibleLine; line <= endVisibleLine; line++) {
         if (isLineHidden(line)) continue
+        if (collapsed.has(line)) {
+          const outputLine = output.querySelector<HTMLElement>(`[data-line="${line}"]`)
+          if (outputLine) renderVisualSelection(outputLine, start, end)
+          continue
+        }
         const marker = document.createElement('div')
         marker.className = 'shikitor-fold-selection__line'
         marker.style.top = `calc(${visibleRow(line) - 1} * var(--line-height))`
@@ -619,14 +848,32 @@ export default definePlugin({
         placeholder.title = expandLabel
         placeholder.setAttribute('aria-label', expandLabel)
         placeholder.textContent = '...'
-        outputLine.append(placeholder)
-        if (range.kind === 'line-comment' || !range.close) continue
         const suffixLine = range.suffixLine ?? range.endLine
         const suffixColumn = range.suffixColumn ?? range.closeColumn
+        const placeholderStart = shikitor.rawTextHelper.lineEnd({
+          line: range.startLine,
+          character: 0
+        })
+        const suffixStart = shikitor.rawTextHelper.resolvePosition({
+          line: suffixLine,
+          character: suffixColumn
+        }).offset
+        placeholder.dataset.foldSourceStart = String(placeholderStart)
+        placeholder.dataset.foldSourceEnd = String(
+          range.kind === 'line-comment' || !range.close
+            ? shikitor.rawTextHelper.lineEnd({ line: range.endLine, character: 0 })
+            : suffixStart
+        )
+        outputLine.append(placeholder)
+        if (range.kind === 'line-comment' || !range.close) continue
         const closingLine = output.querySelector<HTMLElement>(`[data-line="${suffixLine}"]`)
         const suffixContent = closingLine && cloneLineSuffix(closingLine, suffixColumn)
         const suffix = document.createElement('span')
         suffix.className = 'shikitor-fold-suffix'
+        suffix.dataset.foldSourceStart = String(suffixStart)
+        suffix.dataset.foldSourceEnd = String(
+          shikitor.rawTextHelper.lineEnd({ line: suffixLine, character: 0 })
+        )
         if (suffixContent) {
           suffix.append(suffixContent)
         } else {
@@ -804,6 +1051,77 @@ export default definePlugin({
     let mappedPointerOffset: number | undefined
     let mappedPointerSelection: { anchor: number; focus: number } | undefined
     let mappedPointerExpiresAt = 0
+    let mappedKeyboardOffset: number | undefined
+    let mappedKeyboardExpiresAt = 0
+    let suppressNextCompatibilityMouseDown = false
+    let nativeSelectionAnchor: number | undefined
+    const onNativeSelectStart = (event: Event) => {
+      if (collapsed.size === 0) return
+      if (
+        event.target instanceof Element
+        && event.target.closest('[data-fold-line], .shikitor-fold-scrollbar')
+      ) return
+      event.preventDefault()
+    }
+    const onNativeMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || collapsed.size === 0) return
+      if (
+        event.target instanceof Element
+        && event.target.closest('[data-fold-line], .shikitor-fold-scrollbar')
+      ) return
+      const rect = container.getBoundingClientRect()
+      if (
+        event.clientX < rect.left
+        || event.clientX > rect.right
+        || event.clientY < rect.top
+        || event.clientY > rect.bottom
+      ) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const position = pointerPosition(event as PointerEvent)
+      const currentStart = Math.min(input.selectionStart, input.selectionEnd)
+      const currentEnd = Math.max(input.selectionStart, input.selectionEnd)
+      const continueExistingSelection = (
+        !event.shiftKey
+        && currentStart !== currentEnd
+        && position.offset >= currentStart
+        && position.offset <= currentEnd
+      )
+      const previousAnchor = continueExistingSelection
+        ? (position.offset - currentStart <= currentEnd - position.offset ? currentEnd : currentStart)
+        : input.selectionDirection === 'backward'
+          ? input.selectionEnd
+          : input.selectionStart
+      nativeSelectionAnchor = event.shiftKey || continueExistingSelection
+        ? previousAnchor
+        : position.offset
+      mappedPointerOffset = position.offset
+      mappedPointerSelection = { anchor: nativeSelectionAnchor, focus: position.offset }
+      mappedPointerExpiresAt = performance.now() + 500
+      input.dataset.foldPointerOffset = String(position.offset)
+      applySelection(nativeSelectionAnchor, position.offset)
+      input.focus({ preventScroll: true })
+    }
+    const onNativeMouseMove = (event: MouseEvent) => {
+      if (nativeSelectionAnchor === undefined || event.buttons !== 1) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const focus = pointerPosition(event as PointerEvent).offset
+      mappedPointerOffset = focus
+      mappedPointerSelection = { anchor: nativeSelectionAnchor, focus }
+      mappedPointerExpiresAt = performance.now() + 500
+      applySelection(nativeSelectionAnchor, focus)
+    }
+    const onNativeMouseUp = (event: MouseEvent) => {
+      if (nativeSelectionAnchor === undefined) return
+      event.preventDefault()
+      mappedPointerExpiresAt = performance.now() + 500
+      nativeSelectionAnchor = undefined
+    }
+    container.addEventListener('selectstart', onNativeSelectStart, true)
+    container.addEventListener('mousedown', onNativeMouseDown, true)
+    document.addEventListener('mousemove', onNativeMouseMove, true)
+    document.addEventListener('mouseup', onNativeMouseUp, true)
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0 || collapsed.size === 0) return
       if (
@@ -819,7 +1137,7 @@ export default definePlugin({
       ) return
       event.preventDefault()
       event.stopImmediatePropagation()
-      input.focus({ preventScroll: true })
+      suppressNextCompatibilityMouseDown = true
       const position = pointerPosition(event)
       mappedPointerOffset = position.offset
       mappedPointerExpiresAt = performance.now() + 500
@@ -847,10 +1165,11 @@ export default definePlugin({
         mappedPointerSelection = { anchor: pointerAnchor, focus: position.offset }
         applySelection(pointerAnchor, position.offset)
       }
+      input.focus({ preventScroll: true })
       input.setPointerCapture(event.pointerId)
     }
     const onPointerMove = (event: PointerEvent) => {
-      if (pointerAnchor === undefined || !input.hasPointerCapture(event.pointerId)) return
+      if (pointerAnchor === undefined) return
       event.preventDefault()
       const focus = pointerPosition(event).offset
       mappedPointerOffset = focus
@@ -881,6 +1200,21 @@ export default definePlugin({
       // uncollapsed native line geometry after the pointer mapper ran.
       event.preventDefault()
       event.stopImmediatePropagation()
+      if (suppressNextCompatibilityMouseDown) {
+        suppressNextCompatibilityMouseDown = false
+        return
+      }
+      const position = pointerPosition(event as PointerEvent)
+      mappedPointerOffset = position.offset
+      mappedPointerExpiresAt = performance.now() + 500
+      input.dataset.foldPointerOffset = String(position.offset)
+      const previousAnchor = input.selectionDirection === 'backward'
+        ? input.selectionEnd
+        : input.selectionStart
+      pointerAnchor = event.shiftKey ? previousAnchor : position.offset
+      mappedPointerSelection = { anchor: pointerAnchor, focus: position.offset }
+      applySelection(pointerAnchor, position.offset)
+      input.focus({ preventScroll: true })
       if (mappedPointerOffset !== undefined && performance.now() <= mappedPointerExpiresAt) {
         const selection = mappedPointerSelection ?? {
           anchor: mappedPointerOffset,
@@ -891,43 +1225,161 @@ export default definePlugin({
         })
       }
     }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (collapsed.size === 0 || input.selectionStart !== input.selectionEnd) return
-      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return
-      if (event.altKey || event.metaKey || event.ctrlKey) return
-      const cursor = shikitor.rawTextHelper.resolvePosition(input.selectionStart)
-      const lines = visibleLines()
-      const visibleIndex = lines.indexOf(cursor.line)
-      if (visibleIndex === -1) return
-      let targetLine: number | undefined
-      let character = cursor.character
-      if (event.key === 'ArrowUp') targetLine = lines[visibleIndex - 1]
-      if (event.key === 'ArrowDown') targetLine = lines[visibleIndex + 1]
-      if (event.key === 'ArrowLeft' && cursor.character === 0) {
-        targetLine = lines[visibleIndex - 1]
-        if (targetLine) character = shikitor.rawTextHelper.line({ line: targetLine, character: 0 }).length
+    const onMouseMove = (event: MouseEvent) => {
+      if (pointerAnchor === undefined) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const focus = pointerPosition(event as PointerEvent).offset
+      mappedPointerOffset = focus
+      mappedPointerSelection = { anchor: pointerAnchor, focus }
+      mappedPointerExpiresAt = performance.now() + 500
+      applySelection(pointerAnchor, focus)
+    }
+    const onMouseUp = (event: MouseEvent) => {
+      if (pointerAnchor === undefined) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      mappedPointerExpiresAt = performance.now() + 500
+      pointerAnchor = undefined
+    }
+
+    const visibleLineForOffset = (offset: number) => {
+      const position = shikitor.rawTextHelper.resolvePosition(offset)
+      return ranges.find(range =>
+        collapsed.has(range.startLine)
+        && position.line > range.startLine
+        && position.line <= range.endLine
+      )?.startLine ?? position.line
+    }
+    const visualBoundariesForLine = (line: number) => {
+      const outputLine = output.querySelector<HTMLElement>(`[data-line="${line}"]`)
+      if (!outputLine) return []
+      return visualGeometry(outputLine).boundaries
+    }
+    const lineHasFoldedVisuals = (line: number) => !!output
+      .querySelector<HTMLElement>(`[data-line="${line}"]`)
+      ?.querySelector('.shikitor-fold-placeholder')
+    const rememberKeyboardOffset = (offset: number) => {
+      mappedKeyboardOffset = offset
+      mappedKeyboardExpiresAt = performance.now() + 500
+    }
+    const selectionAnchorAndFocus = () => {
+      if (input.selectionDirection === 'backward') {
+        return { anchor: input.selectionEnd, focus: input.selectionStart }
       }
-      if (event.key === 'ArrowRight') {
-        const lineLength = shikitor.rawTextHelper.line(cursor).length
-        if (cursor.character >= lineLength) {
-          targetLine = lines[visibleIndex + 1]
-          character = 0
+      return { anchor: input.selectionStart, focus: input.selectionEnd }
+    }
+    const applyKeyboardSelection = (anchor: number, focus: number) => {
+      rememberKeyboardOffset(focus)
+      applySelection(anchor, focus)
+      queueMicrotask(() => {
+        const cursor = shikitor.rawTextHelper.resolvePosition(focus)
+        const position = shikitor._getCursorAbsolutePosition(cursor)
+        const viewportStart = visualScrollLeft
+        const viewportEnd = viewportStart + container.clientWidth - 24
+        if (position.x < viewportStart) syncHorizontalScroll(Math.max(0, position.x - 12))
+        else if (position.x > viewportEnd) {
+          syncHorizontalScroll(position.x - container.clientWidth + 36)
+        }
+      })
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (collapsed.size === 0) return
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      if (event.altKey || event.metaKey || event.ctrlKey) return
+      const selection = selectionAnchorAndFocus()
+      if (!event.shiftKey && input.selectionStart !== input.selectionEnd) {
+        const focus = event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'Home'
+          ? input.selectionStart
+          : input.selectionEnd
+        event.preventDefault()
+        applyKeyboardSelection(focus, focus)
+        return
+      }
+
+      const cursor = shikitor.rawTextHelper.resolvePosition(selection.focus)
+      const lines = visibleLines()
+      const currentLine = visibleLineForOffset(selection.focus)
+      const visibleIndex = lines.indexOf(currentLine)
+      if (visibleIndex === -1) return
+      const currentIsFolded = lineHasFoldedVisuals(currentLine)
+      const currentBoundaries = currentIsFolded ? visualBoundariesForLine(currentLine) : []
+      let offset: number | undefined
+
+      if (event.key === 'Home' || event.key === 'End') {
+        const ordered = currentIsFolded
+          ? orderedFoldVisualBoundaries(currentBoundaries)
+          : []
+        offset = event.key === 'Home'
+          ? ordered[0]?.offset ?? shikitor.rawTextHelper.lineStart(selection.focus)
+          : ordered.at(-1)?.offset ?? shikitor.rawTextHelper.lineEnd(selection.focus)
+      }
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        const direction: FoldVisualNavigationDirection = event.key === 'ArrowLeft'
+          ? 'backward'
+          : 'forward'
+        if (currentIsFolded) {
+          offset = resolveFoldVisualKeyboardOffset(currentBoundaries, selection.focus, direction)
+        }
+        if (offset === undefined) {
+          const atLineStart = selection.focus === shikitor.rawTextHelper.lineStart(selection.focus)
+          const atLineEnd = selection.focus === shikitor.rawTextHelper.lineEnd(selection.focus)
+          const crossesLine = direction === 'backward' ? atLineStart : atLineEnd
+          if (!crossesLine && !currentIsFolded) {
+            offset = selection.focus + (direction === 'backward' ? -1 : 1)
+          }
+          if (offset === undefined) {
+            const targetLine = direction === 'backward'
+              ? lines[visibleIndex - 1]
+              : lines[visibleIndex + 1]
+            if (!targetLine) return
+            const targetBoundaries = lineHasFoldedVisuals(targetLine)
+              ? orderedFoldVisualBoundaries(visualBoundariesForLine(targetLine))
+              : []
+            offset = direction === 'backward'
+              ? targetBoundaries.at(-1)?.offset
+                ?? shikitor.rawTextHelper.lineEnd({ line: targetLine, character: 0 })
+              : targetBoundaries[0]?.offset
+                ?? shikitor.rawTextHelper.lineStart({ line: targetLine, character: 0 })
+          }
         }
       }
-      if (!targetLine) return
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        const targetLine = event.key === 'ArrowUp'
+          ? lines[visibleIndex - 1]
+          : lines[visibleIndex + 1]
+        if (!targetLine) return
+        const exactBoundary = currentBoundaries
+          .filter(boundary => boundary.offset === selection.focus)
+          .at(event.key === 'ArrowUp' ? 0 : -1)
+        const currentX = exactBoundary?.x
+          ?? shikitor._getCursorAbsolutePosition(cursor).x
+            - visualScrollLeft
+            + container.getBoundingClientRect().left
+        const targetBoundaries = visualBoundariesForLine(targetLine)
+        offset = resolveFoldVisualOffset(targetBoundaries, currentX)
+        if (offset === undefined) {
+          const lineLength = shikitor.rawTextHelper.line({ line: targetLine, character: 0 }).length
+          offset = shikitor.rawTextHelper.resolvePosition({
+            line: targetLine,
+            character: Math.min(cursor.character, lineLength)
+          }).offset
+        }
+      }
+
+      if (offset === undefined) return
       event.preventDefault()
-      const lineLength = shikitor.rawTextHelper.line({ line: targetLine, character: 0 }).length
-      const offset = shikitor.rawTextHelper.resolvePosition({
-        line: targetLine,
-        character: Math.min(character, lineLength)
-      }).offset
-      applySelection(offset, offset)
+      applyKeyboardSelection(event.shiftKey ? selection.anchor : offset, offset)
     }
     target.addEventListener('pointerdown', onPointerDown, true)
     target.addEventListener('pointermove', onPointerMove, true)
     target.addEventListener('pointerup', onPointerUp, true)
     target.addEventListener('pointercancel', onPointerUp, true)
     target.addEventListener('mousedown', onMouseDown, true)
+    target.addEventListener('mousemove', onMouseMove, true)
+    target.addEventListener('mouseup', onMouseUp, true)
     const onClickMapped = (event: MouseEvent) => {
       if (
         event.target instanceof Element
@@ -947,9 +1399,14 @@ export default definePlugin({
       event.stopImmediatePropagation()
       const offset = mappedPointerOffset ?? Number(pendingOffset)
       const selection = mappedPointerSelection ?? { anchor: offset, focus: offset }
-      mappedPointerOffset = undefined
-      mappedPointerSelection = undefined
       delete input.dataset.foldPointerOffset
+      // Keep the mapped pointer state alive while the deferred click selection
+      // propagates through the editor's cursor subscribers. Clearing it first
+      // made the cursor-change guard treat a valid suffix offset as an
+      // arbitrary hidden-line caret and clamp it back to the opening line.
+      mappedPointerOffset = selection.focus
+      mappedPointerSelection = selection
+      mappedPointerExpiresAt = performance.now() + 500
       setTimeout(() => applySelection(selection.anchor, selection.focus), 0)
     }
     target.addEventListener('click', onClickMapped, true)
@@ -972,6 +1429,17 @@ export default definePlugin({
         && cursor.line <= range.endLine
       )
       if (!hiddenRange) return
+      // Pointer mapping deliberately allows a collapsed visual suffix to
+      // retain its real hidden-source offset. Do not immediately clamp that
+      // mapped caret back to the opening line.
+      if (
+        mappedPointerOffset !== undefined
+        && performance.now() <= mappedPointerExpiresAt
+      ) return
+      if (
+        mappedKeyboardOffset === cursor.offset
+        && performance.now() <= mappedKeyboardExpiresAt
+      ) return
       // The caret model keeps the real source offset. A pointer selection can
       // therefore cross folded text without expanding it. Only explicit
       // keyboard navigation into a hidden line should reveal that range.
@@ -1002,11 +1470,17 @@ export default definePlugin({
       horizontalScrollTrack.removeEventListener('pointerup', onHorizontalScrollbarPointerUp)
       horizontalScrollTrack.removeEventListener('pointercancel', onHorizontalScrollbarPointerUp)
       resizeObserver.disconnect()
+      container.removeEventListener('selectstart', onNativeSelectStart, true)
+      container.removeEventListener('mousedown', onNativeMouseDown, true)
+      document.removeEventListener('mousemove', onNativeMouseMove, true)
+      document.removeEventListener('mouseup', onNativeMouseUp, true)
       target.removeEventListener('pointerdown', onPointerDown, true)
       target.removeEventListener('pointermove', onPointerMove, true)
       target.removeEventListener('pointerup', onPointerUp, true)
       target.removeEventListener('pointercancel', onPointerUp, true)
       target.removeEventListener('mousedown', onMouseDown, true)
+      target.removeEventListener('mousemove', onMouseMove, true)
+      target.removeEventListener('mouseup', onMouseUp, true)
       target.removeEventListener('click', onClickMapped, true)
       input.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('selectionchange', onSelectionChange)

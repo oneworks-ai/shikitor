@@ -33,11 +33,16 @@ export function calculateNodeSize(targetElement: HTMLElement) {
     || style.getPropertyValue('-moz-box-sizing')
     || style.getPropertyValue('-webkit-box-sizing')
 
-  const paddingSize = parseFloat(style.getPropertyValue('padding-bottom'))
-    + parseFloat(style.getPropertyValue('padding-top'))
+  const readSize = (name: string) => {
+    const value = Number.parseFloat(style.getPropertyValue(name))
+    return Number.isFinite(value) ? value : 0
+  }
 
-  const borderSize = parseFloat(style.getPropertyValue('border-bottom-width'))
-    + parseFloat(style.getPropertyValue('border-top-width'))
+  const paddingSize = readSize('padding-bottom')
+    + readSize('padding-top')
+
+  const borderSize = readSize('border-bottom-width')
+    + readSize('border-top-width')
 
   const sizingStyle = DOM_STYLE_PROPS
     .map((name) => `${name}:${style.getPropertyValue(name)}`)

@@ -15,6 +15,9 @@
   --pg-canvas: #f7f8fc;
   --pg-border: #e4e6ee;
   --pg-border-soft: #eff0f4;
+  --pg-sidebar: rgba(255, 255, 255, .96);
+  --pg-header: rgba(255, 255, 255, .92);
+  --pg-control: #fff;
 
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -22,6 +25,25 @@
   height: 100%;
   color: var(--pg-text);
   background: var(--pg-canvas);
+
+  &[data-theme='dark'] {
+    --pg-accent: #8b7df2;
+    --pg-accent-hover: #9d91f6;
+    --pg-accent-soft: #29264a;
+    --pg-text: #eceef7;
+    --pg-text-secondary: #aeb4c6;
+    --pg-text-tertiary: #7f879b;
+    --pg-surface: #191c24;
+    --pg-surface-muted: #222630;
+    --pg-canvas: #11141b;
+    --pg-border: #303541;
+    --pg-border-soft: #272c36;
+    --pg-sidebar: rgba(23, 26, 34, .97);
+    --pg-header: rgba(17, 20, 27, .92);
+    --pg-control: #20242d;
+
+    color-scheme: dark;
+  }
 }
 
 .playground-sidebar {
@@ -30,7 +52,7 @@
   min-width: 0;
   flex-direction: column;
   border-right: 1px solid var(--pg-border);
-  background: rgba(255, 255, 255, .96);
+  background: var(--pg-sidebar);
   box-shadow: 6px 0 24px rgba(30, 34, 54, .025);
 }
 
@@ -311,11 +333,10 @@
   min-height: 72px;
   padding: 8px 22px;
   border-bottom: 1px solid var(--pg-border);
-  background: rgba(255, 255, 255, .92);
+  background: var(--pg-header);
   backdrop-filter: blur(14px);
 
-  h1,
-  p {
+  h1 {
     margin: 0;
   }
 
@@ -326,11 +347,6 @@
     letter-spacing: -.025em;
   }
 
-  p {
-    margin-top: 2px;
-    color: var(--pg-text-secondary);
-    font-size: 12px;
-  }
 }
 
 .playground-breadcrumb {
@@ -352,7 +368,8 @@
   gap: 10px;
 }
 
-.playground-github {
+.playground-github,
+.playground-theme {
   display: grid;
   place-items: center;
   width: 32px;
@@ -360,7 +377,9 @@
   border: 1px solid var(--pg-border);
   border-radius: 9px;
   color: var(--pg-text-secondary);
-  background: #fff;
+  background: var(--pg-control);
+  font: inherit;
+  cursor: pointer;
   transition: color .16s ease, border-color .16s ease, transform .16s ease;
 
   svg {
@@ -385,7 +404,7 @@
   border: 1px solid var(--pg-border);
   border-radius: 9px;
   color: var(--pg-text-secondary);
-  background: #fff;
+  background: var(--pg-control);
   font: inherit;
   font-size: 10px;
   font-weight: 650;

@@ -3,10 +3,55 @@ import { describe, expect, it } from 'vitest'
 import {
   findFoldRanges,
   resolveFoldScrollMetrics,
+  resolveFoldVisualKeyboardOffset,
+  resolveFoldVisualOffset,
   shouldUseFoldVisualHorizontalScroll
 } from '../../src/plugins/code-folding'
 
 describe('code folding ranges', () => {
+  it('maps pointer positions onto folded suffix source offsets', () => {
+    const boundaries = [
+      { x: 0, offset: 0 },
+      { x: 80, offset: 8 },
+      { x: 110, offset: 40 },
+      { x: 150, offset: 44 }
+    ]
+
+    expect(resolveFoldVisualOffset(boundaries, 104)).toBe(40)
+    expect(resolveFoldVisualOffset(boundaries, 143)).toBe(44)
+    expect(resolveFoldVisualOffset([], 20)).toBeUndefined()
+  })
+
+  it('moves the keyboard caret across a folded placeholder as one visual unit', () => {
+    const boundaries = [
+      { x: 0, offset: 24 },
+      { x: 10, offset: 25 },
+      { x: 20, offset: 26 },
+      { x: 20, offset: 26 },
+      { x: 48, offset: 50 },
+      { x: 48, offset: 50 },
+      { x: 58, offset: 51 },
+      { x: 68, offset: 52 }
+    ]
+
+    expect(resolveFoldVisualKeyboardOffset(boundaries, 26, 'forward')).toBe(50)
+    expect(resolveFoldVisualKeyboardOffset(boundaries, 50, 'backward')).toBe(26)
+    expect(resolveFoldVisualKeyboardOffset(boundaries, 50, 'forward')).toBe(51)
+    expect(resolveFoldVisualKeyboardOffset(boundaries, 51, 'backward')).toBe(50)
+  })
+
+  it('snaps a hidden programmatic cursor to the requested placeholder edge', () => {
+    const boundaries = [
+      { x: 0, offset: 26 },
+      { x: 28, offset: 50 },
+      { x: 38, offset: 51 }
+    ]
+
+    expect(resolveFoldVisualKeyboardOffset(boundaries, 34, 'backward')).toBe(26)
+    expect(resolveFoldVisualKeyboardOffset(boundaries, 34, 'forward')).toBe(50)
+    expect(resolveFoldVisualKeyboardOffset([], 34, 'forward')).toBeUndefined()
+  })
+
   it('lets a composed folded line own horizontal scrolling', () => {
     expect(shouldUseFoldVisualHorizontalScroll(true, 1422, 634)).toBe(true)
     expect(shouldUseFoldVisualHorizontalScroll(false, 1422, 634)).toBe(false)
