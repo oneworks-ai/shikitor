@@ -1,21 +1,27 @@
 import './index.scss'
 
-import type { Shikitor } from '@shikitor/core'
+import type { Shikitor, ShikitorInputEvent } from '@shikitor/core'
 import provideCompletions from '@shikitor/core/plugins/provide-completions'
+import hoverPopover from '@shikitor/core/plugins/hover-popover'
 import providePopup from '@shikitor/core/plugins/provide-popup'
+import providePointer from '@shikitor/core/plugins/provide-pointer'
 import { WithoutCoreEditor } from '@shikitor/react/WithoutCoreEditor'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useShikitorCreate } from '../../../hooks/useShikitorCreate'
 import { useI18n } from '../../../i18n'
-import type { LanguageServiceSnapshot } from './client'
+import type { LanguageDefinition, LanguageServiceSnapshot } from './client'
 import typeScriptLanguageService from './plugin'
 
-const initialCode = `interface User {
+const initialCode = `/** Profile data returned by the account API. */
+interface User {
+  /** Stable numeric identifier for the account. */
   id: number
+  /** Display name shown throughout the workspace. */
   name: string
 }
 
+/** The user currently signed in to this workspace. */
 const user: User = {
   id: "not-a-number",
   name: "Ada"
@@ -37,23 +43,47 @@ export default function TypeScriptLanguageServiceDemo() {
   const [code, setCode] = useState(initialCode)
   const [snapshot, setSnapshot] = useState(emptySnapshot)
   const [ready, setReady] = useState(false)
+  const [definition, setDefinition] = useState<LanguageDefinition>()
   const editorRef = useRef<Shikitor>()
   const disposeListenerRef = useRef<() => void>()
   const completionEmptyText = t('lsp.completion.empty')
+  const hoverEmptyText = t('lsp.hover.documentationEmpty')
+  const hoverAriaLabel = t('lsp.hover.ariaLabel')
   const editorOptions = useMemo(() => ({
     language: 'typescript' as const,
     theme: 'github-dark' as const,
-    lineNumbers: 'on' as const
+    lineNumbers: 'on' as const,
+    hideSelfCursorUsername: true
   }), [])
   const plugins = useMemo(() => [
+    providePointer,
     providePopup,
     [provideCompletions, {
       popupPlacement: 'bottom',
       footer: false,
       emptyText: completionEmptyText
     }] as const,
-    typeScriptLanguageService
-  ], [completionEmptyText])
+    typeScriptLanguageService,
+    [hoverPopover, {
+      delay: 240,
+      ariaLabel: hoverAriaLabel,
+      resolve(event: ShikitorInputEvent, editor: Shikitor) {
+        const offset = event.hit.position?.offset
+        if (offset === undefined) return
+        const client = editor.context.shikitorTypeScript
+        client.updateDocument(editor.value)
+        const hover = client.getHover(offset)
+        if (!hover) return
+        return {
+          id: `typescript-${hover.start}-${hover.length}`,
+          start: hover.start,
+          end: hover.start + hover.length,
+          title: hover.signature,
+          content: hover.documentation ?? hoverEmptyText
+        }
+      }
+    }] as const
+  ], [completionEmptyText, hoverAriaLabel, hoverEmptyText])
 
   const handleMounted = useCallback((editor: Shikitor) => {
     disposeListenerRef.current?.()
@@ -62,7 +92,12 @@ export default function TypeScriptLanguageServiceDemo() {
     editor.focus(initialCode.length)
     setReady(true)
     setSnapshot(editor.context.shikitorTypeScript.inspect(editor.cursor.offset))
-    disposeListenerRef.current = editor.context.on('shikitor/typescript-updated', setSnapshot)
+    const disposeSnapshot = editor.context.on('shikitor/typescript-updated', setSnapshot)
+    const disposeDefinition = editor.context.on('shikitor/typescript-definition', setDefinition)
+    disposeListenerRef.current = () => {
+      disposeSnapshot()
+      disposeDefinition()
+    }
   }, [])
 
   useEffect(() => () => disposeListenerRef.current?.(), [])
@@ -113,7 +148,13 @@ export default function TypeScriptLanguageServiceDemo() {
           />
           <div className='ts-lsp-editor-hint'>
             <span className='shikitor-icon'>tips_and_updates</span>
-            {t('lsp.tryHint')}
+            {definition
+              ? t('lsp.definition.navigated', {
+                  name: definition.name,
+                  line: definition.line,
+                  character: definition.character
+                })
+              : t('lsp.tryHint')}
           </div>
         </div>
 

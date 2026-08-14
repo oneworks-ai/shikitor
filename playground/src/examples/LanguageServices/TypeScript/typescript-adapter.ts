@@ -3,6 +3,7 @@ import type * as TypeScript from 'typescript'
 import type {
   DiagnosticSeverity,
   LanguageCompletion,
+  LanguageDefinition,
   LanguageDiagnostic,
   LanguageHover,
   LanguageServiceClient,
@@ -121,6 +122,25 @@ export function createTypeScriptLanguageService(
     })) ?? []
   }
 
+  function getDefinition(position: number): LanguageDefinition | undefined {
+    assertActive()
+    const offset = Math.max(0, Math.min(position, value.length))
+    const definition = service.getDefinitionAtPosition(fileName, offset)?.[0]
+      ?? (offset > 0 ? service.getDefinitionAtPosition(fileName, offset - 1)?.[0] : undefined)
+    if (!definition) return
+    const sourceFile = service.getProgram()?.getSourceFile(definition.fileName)
+    if (!sourceFile) return
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(definition.textSpan.start)
+    return {
+      fileName: definition.fileName.replace(/^\/workspace\//, ''),
+      name: definition.name,
+      start: definition.textSpan.start,
+      length: definition.textSpan.length,
+      line: line + 1,
+      character: character + 1
+    }
+  }
+
   const client: LanguageServiceClient = {
     languageId: 'typescript',
     runtimeVersion: ts.version,
@@ -132,6 +152,7 @@ export function createTypeScriptLanguageService(
     },
     getDiagnostics,
     getHover,
+    getDefinition,
     getCompletions,
     inspect(position): LanguageServiceSnapshot {
       const completions = value[position - 1] === '.' ? getCompletions(position) : []

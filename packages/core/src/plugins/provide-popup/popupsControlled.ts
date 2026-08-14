@@ -19,6 +19,12 @@ const REVERSE_MAP = {
 
 const popupResizeObservers = new WeakMap<HTMLElement, ResizeObserver>()
 
+function removePopupElement(element: HTMLElement) {
+  popupResizeObservers.get(element)?.disconnect()
+  popupResizeObservers.delete(element)
+  element.remove()
+}
+
 function updatePopupElement(
   shikitor: Shikitor,
   ele: HTMLElement,
@@ -131,6 +137,14 @@ function updatePopupElement(
   }
 }
 export function mountPopup(shikitor: Shikitor, popup: ResolvedPopup) {
+  // Popup ids are unique within one editor. Removing an older element with the
+  // same id also recovers DOM left behind by a disposed/HMR-replaced provider.
+  const popupClassName = `${prefix}-${popup.id}`
+  for (const child of shikitor.element.children) {
+    if (child.classList.contains(popupClassName)) {
+      removePopupElement(child as HTMLElement)
+    }
+  }
   const ele = document.createElement('div')
   updatePopupElement(shikitor, ele, popup, true)
   popup.render(ele)
@@ -141,11 +155,18 @@ export function mountPopup(shikitor: Shikitor, popup: ResolvedPopup) {
 export function popupsControlled(getShikitor: () => Shikitor) {
   const popups = proxy<ResolvedPopup[]>([])
   const prevPopupElements = new Map<ResolvedPopup, HTMLDivElement>()
+  let disposed = false
   const disposeSubscribe = debounceSubscribe(popups, () => {
+    // A debounced subscription can already be queued when the controller is
+    // disposed. Never allow that stale callback to mount a popup again.
+    if (disposed) return
     const shikitor = getShikitor()
     const newPopupElements = new Map<ResolvedPopup, HTMLDivElement>()
-    for (const popup of popups) {
+    const latestPopupById = new Map<string, ResolvedPopup>()
+    for (const popup of popups) latestPopupById.set(popup.id, popup)
+    for (const popup of latestPopupById.values()) {
       let ele = prevPopupElements.get(popup)
+      if (ele && ele.parentElement !== shikitor.element) ele = undefined
       if (ele) {
         updatePopupElement(shikitor, ele, popup)
       } else {
@@ -155,9 +176,7 @@ export function popupsControlled(getShikitor: () => Shikitor) {
     }
     for (const [popup, ele] of prevPopupElements) {
       if (!newPopupElements.has(popup)) {
-        popupResizeObservers.get(ele)?.disconnect()
-        popupResizeObservers.delete(ele)
-        ele.remove()
+        removePopupElement(ele)
       }
     }
     prevPopupElements.clear()
@@ -185,15 +204,17 @@ export function popupsControlled(getShikitor: () => Shikitor) {
   return {
     popups,
     dispose() {
+      if (disposed) return
+      disposed = true
       disposeSubscribe()
       document.removeEventListener('scroll', updatePositions, true)
       window.removeEventListener('resize', updatePositions)
       editorResizeObserver.disconnect()
       if (positionFrame !== undefined) cancelAnimationFrame(positionFrame)
       for (const element of prevPopupElements.values()) {
-        popupResizeObservers.get(element)?.disconnect()
-        popupResizeObservers.delete(element)
+        removePopupElement(element)
       }
+      prevPopupElements.clear()
     }
   }
 }

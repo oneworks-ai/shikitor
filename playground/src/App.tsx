@@ -1,6 +1,14 @@
 import './App.scss'
 
-import React, { type ComponentType, lazy, type LazyExoticComponent, Suspense, useMemo } from 'react'
+import React, {
+  type ComponentType,
+  lazy,
+  type LazyExoticComponent,
+  Suspense,
+  useLayoutEffect,
+  useMemo,
+  useRef
+} from 'react'
 import {
   ChatIcon,
   CheckCircleFilledIcon,
@@ -20,6 +28,7 @@ import { useI18n } from './i18n'
 type ComponentId =
   | 'Code Editor'
   | 'code-editor-ux'
+  | 'code-editor-live-renderer'
   | 'code-editor-input-events'
   | 'code-editor-typescript-lsp'
   | 'Markdown Editor'
@@ -80,6 +89,14 @@ const components: ComponentGroup[] = [
             component: lazy(() => import('./examples/CodeEditor'))
           },
           {
+            id: 'code-editor-live-renderer',
+            titleKey: 'nav.liveRenderer',
+            descriptionKey: 'component.liveRenderer.description',
+            breadcrumbParentKey: 'nav.codeEditor',
+            icon: CodeIcon,
+            component: lazy(() => import('./examples/LiveRenderer'))
+          },
+          {
             id: 'code-editor-input-events',
             titleKey: 'nav.inputEvents',
             descriptionKey: 'component.inputEvents.description',
@@ -115,6 +132,7 @@ const defaultComponent = componentItems.find(item => item.id === 'Messenger')!
 
 export default function App() {
   const { locale, setLocale, t } = useI18n()
+  const mainRef = useRef<HTMLElement>(null)
   const {
     value: {
       active = 'Messenger',
@@ -130,12 +148,32 @@ export default function App() {
       ?? defaultComponent
   }, [active])
   const ActiveComponent = activeItem.component
+  const selectComponent = (id: ComponentId) => {
+    if (location.hash) {
+      history.replaceState(null, '', `${location.pathname}${location.search}`)
+    }
+    set('active', id)
+    mainRef.current?.scrollTo({ top: 0 })
+  }
   const switchLocale = () => {
     const anchorId = decodeURIComponent(location.hash.slice(1))
     setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')
     if (!anchorId) return
     requestAnimationFrame(() => document.getElementById(anchorId)?.scrollIntoView({ block: 'start' }))
   }
+  useLayoutEffect(() => {
+    if (location.hash) return
+    mainRef.current?.scrollTo({ top: 0 })
+  }, [activeItem.id])
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const previousThemeMode = root.getAttribute('theme-mode')
+    root.setAttribute('theme-mode', theme)
+    return () => {
+      if (previousThemeMode === null) root.removeAttribute('theme-mode')
+      else root.setAttribute('theme-mode', previousThemeMode)
+    }
+  }, [theme])
 
   return (
     <div className='playground-shell' data-theme={theme}>
@@ -183,7 +221,7 @@ export default function App() {
                                 className={`component-tree__item component-tree__item--sub${selected ? ' component-tree__item--active' : ''}`}
                                 aria-current={selected ? 'page' : undefined}
                                 aria-label={t(child.navTitleKey ?? child.titleKey)}
-                                onClick={() => set('active', child.id)}
+                                onClick={() => selectComponent(child.id)}
                               >
                                 <ChildIcon />
                                 <span>{t(child.navTitleKey ?? child.titleKey)}</span>
@@ -203,7 +241,7 @@ export default function App() {
                       className={`component-tree__item${selected ? ' component-tree__item--active' : ''}`}
                       aria-current={selected ? 'page' : undefined}
                       aria-label={t(item.titleKey)}
-                      onClick={() => set('active', item.id)}
+                      onClick={() => selectComponent(item.id)}
                     >
                       <Icon />
                       <span>{t(item.titleKey)}</span>
@@ -224,7 +262,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main className='playground-main'>
+      <main className='playground-main' ref={mainRef}>
         <header className='playground-header'>
           <div>
             <div className='playground-breadcrumb'>
@@ -267,7 +305,9 @@ export default function App() {
           </div>
         </header>
 
-        <div className='playground-content'>
+        <div
+          className={`playground-content${activeItem.id === 'Messenger' ? ' playground-content--flush' : ''}`}
+        >
           <Suspense fallback={<div className='playground-loading'>{t('loading')}</div>}>
             <ActiveComponent />
           </Suspense>

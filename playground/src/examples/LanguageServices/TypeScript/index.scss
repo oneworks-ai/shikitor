@@ -51,10 +51,10 @@
   gap: 9px;
   min-width: 180px;
   padding: 10px 12px;
-  border: 1px solid #e7e4fa;
+  border: 1px solid var(--pg-border);
   border-radius: 10px;
-  color: #6d63a8;
-  background: #f8f7ff;
+  color: var(--pg-text-secondary);
+  background: var(--pg-surface-muted);
 
   > .shikitor-icon {
     font-size: 19px;
@@ -182,7 +182,8 @@
 .ts-lsp-results {
   min-width: 0;
   border-left: 1px solid var(--pg-border);
-  background: #fff;
+  color: var(--pg-text);
+  background: var(--pg-surface);
 }
 
 .ts-lsp-result-section + .ts-lsp-result-section {
@@ -237,10 +238,10 @@
   gap: 8px;
   width: 100%;
   padding: 9px;
-  border: 1px solid #f3d7dc;
+  border: 1px solid color-mix(in srgb, #be5263 38%, var(--pg-border));
   border-radius: 8px;
   color: inherit;
-  background: #fff8f9;
+  background: color-mix(in srgb, #be5263 9%, var(--pg-surface));
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -254,13 +255,14 @@
 
   > strong {
     min-width: 0;
+    color: var(--pg-text-secondary);
     font-size: 9px;
     font-weight: 550;
     line-height: 1.4;
   }
 
   &:hover {
-    border-color: #e7aab4;
+    border-color: color-mix(in srgb, #be5263 72%, var(--pg-border));
   }
 }
 
@@ -278,7 +280,7 @@
   background: var(--pg-surface-muted);
 
   code {
-    color: #5546d9;
+    color: var(--pg-accent);
     font-size: 10px;
     white-space: pre-wrap;
   }

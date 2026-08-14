@@ -4,11 +4,13 @@ import type {
   InputAction,
   InputActionResult,
   InputBinding,
+  InputChannelName,
   InputDisposable,
   InputDispatchSummary,
   InputEventPolicy,
   InputPlatform,
   ShikitorInputEvent,
+  ShikitorInputListener,
   ShikitorInputService
 } from './types'
 
@@ -44,13 +46,42 @@ export interface InputRegistryOptions {
 
 export class InputRegistry implements ShikitorInputService {
   readonly platform: InputPlatform
+  readonly pointer = this.createChannel('pointer')
+  readonly keyboard = this.createChannel('keyboard')
+  readonly text = this.createChannel('text')
 
   private order = 0
   private actions: Registered<InputAction<any>>[] = []
   private bindings: Registered<InputBinding<any>>[] = []
+  private listeners = new Set<ShikitorInputListener>()
 
   constructor(options: InputRegistryOptions = {}) {
     this.platform = detectInputPlatform(options.platform)
+  }
+
+  private createChannel(channel: InputChannelName) {
+    return {
+      subscribe: (listener: ShikitorInputListener) => this.subscribe((event, summary) => {
+        if (this.resolveChannel(event.type) === channel) listener(event, summary)
+      })
+    }
+  }
+
+  private resolveChannel(type: ShikitorInputEvent['type']): InputChannelName {
+    if (type === 'keydown' || type === 'keyup') return 'keyboard'
+    if (
+      type === 'beforeinput'
+      || type === 'input'
+      || type.startsWith('composition')
+    ) return 'text'
+    return 'pointer'
+  }
+
+  subscribe(listener: ShikitorInputListener): InputDisposable {
+    this.listeners.add(listener)
+    return {
+      dispose: () => this.listeners.delete(listener)
+    }
   }
 
   registerAction<Args = unknown>(action: InputAction<Args>): InputDisposable {
@@ -168,6 +199,7 @@ export class InputRegistry implements ShikitorInputService {
       }
     }
     summary.stopPropagation ||= summary.stopImmediatePropagation
+    for (const listener of [...this.listeners]) listener(event, summary)
     return summary
   }
 }

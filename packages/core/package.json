@@ -15,6 +15,11 @@
     "./utils": "./src/utils/index.ts",
     "./utils/valtio": "./src/utils/valtio/index.ts",
     "./plugins/code-folding": "./src/plugins/code-folding.ts",
+    "./plugins/context-menu": "./src/plugins/context-menu.ts",
+    "./plugins/hover-popover": "./src/plugins/hover-popover.ts",
+    "./plugins/provide-keyboard": "./src/plugins/provide-keyboard.ts",
+    "./plugins/provide-pointer": "./src/plugins/provide-pointer.ts",
+    "./plugins/provide-text-input": "./src/plugins/provide-text-input.ts",
     "./plugins/gutter-decorations": "./src/plugins/gutter-decorations.ts",
     "./plugins/line-widgets": "./src/plugins/line-widgets.ts",
     "./plugins/*": ["./src/plugins/*/index.ts", "./src/plugins/*.ts"]

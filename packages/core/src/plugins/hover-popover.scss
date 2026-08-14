@@ -1,0 +1,27 @@
+.shikitor-hover-popover {
+  position: absolute;
+  z-index: 60;
+  display: grid;
+  max-width: min(320px, calc(100% - 16px));
+  gap: 4px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--shikitor-fg-color) 18%, transparent);
+  border-radius: 7px;
+  color: var(--shikitor-fg-color);
+  background: color-mix(in srgb, var(--shikitor-bg-color) 96%, transparent);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 24%);
+  backdrop-filter: blur(12px);
+  font-family: var(--font-family, ui-monospace), monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.shikitor-hover-popover__title {
+  font-weight: 700;
+}
+
+.shikitor-hover-popover__content {
+  color: color-mix(in srgb, var(--shikitor-fg-color) 74%, transparent);
+  white-space: pre-wrap;
+}

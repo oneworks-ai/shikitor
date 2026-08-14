@@ -7,6 +7,7 @@ import { createTypeScriptCompletionProvider } from '../../src/examples/LanguageS
 describe('browser TypeScript language service adapter', () => {
   test('returns real diagnostics, hover, and member completions', () => {
     const value = `interface User { id: number; name: string }
+/** The user currently signed in to this workspace. */
 const user: User = { id: "wrong", name: "Ada" }
 user.`
     const client = createTypeScriptLanguageService(value, ts)
@@ -14,7 +15,15 @@ user.`
     expect(client.getDiagnostics().some(item => (
       item.code === 2322 && item.message.includes("Type 'string' is not assignable to type 'number'")
     ))).toBe(true)
-    expect(client.getHover(value.indexOf('user:') + 1)?.signature).toContain('const user: User')
+    expect(client.getHover(value.indexOf('user:') + 1)).toMatchObject({
+      signature: expect.stringContaining('const user: User'),
+      documentation: 'The user currently signed in to this workspace.'
+    })
+    expect(client.getDefinition(value.lastIndexOf('user.') + 1)).toMatchObject({
+      name: 'user',
+      line: 3,
+      character: 7
+    })
     expect(client.getCompletions(value.length).map(item => item.label)).toEqual(
       expect.arrayContaining(['id', 'name'])
     )

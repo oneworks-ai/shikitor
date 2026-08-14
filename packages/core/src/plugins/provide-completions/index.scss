@@ -57,6 +57,21 @@
       color: var(--shikitor-bg-color);
       background-color: var(--shikitor-fg-color);
       border-radius: 4px;
+
+      &--custom {
+        padding: 0;
+        overflow: hidden;
+        color: inherit;
+        background-color: transparent;
+      }
+
+      > img,
+      > svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
     }
     &__label {
       flex: 1;

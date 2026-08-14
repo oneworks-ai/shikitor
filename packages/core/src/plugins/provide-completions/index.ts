@@ -48,9 +48,22 @@ export enum CompletionItemKind {
   Snippet = 27
 }
 
+/**
+ * Render a completion item's leading icon.
+ *
+ * Return a fresh DOM node for every call. Consumers can return an `img`, an
+ * `svg`, or any other node without handing raw HTML to Shikitor.
+ */
+export type CompletionItemIconRenderer = () => Node | null | undefined
+
 export interface CompletionItemInner {
   label: string
   kind?: CompletionItemKind
+  /**
+   * Override the icon inferred from {@link kind}. When the renderer returns no
+   * node or throws, Shikitor keeps the kind icon as a safe fallback.
+   */
+  renderIcon?: CompletionItemIconRenderer
   detail?: string
   documentation?: string
   range: TextRange
@@ -131,6 +144,25 @@ function completionItemTemplate(
   `
 }
 completionItemTemplate.prefix = `${'shikitor'}-completion-item` as const
+
+/**
+ * Mount a consumer-provided completion icon without accepting raw HTML.
+ *
+ * @returns Whether a custom icon was mounted.
+ */
+export function mountCompletionItemIcon(
+  target: HTMLElement,
+  renderIcon: CompletionItemIconRenderer
+) {
+  try {
+    const node = renderIcon()
+    if (!node) return false
+    target.replaceChildren(node)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export interface ProvideCompletionsOptions {
   /**
@@ -225,6 +257,17 @@ export default definePlugin({
       ${completionsContent}
       ${footerStr}
     `
+    const completionElements = element.querySelectorAll<HTMLElement>(`.${completionItemTemplate.prefix}`)
+    completions.forEach((completion, index) => {
+      const renderIcon = completion.renderIcon
+      if (typeof renderIcon !== 'function') return
+      const iconTarget = completionElements[index]
+        ?.querySelector<HTMLElement>(`.${completionItemTemplate.prefix}__kind`)
+      if (!iconTarget) return
+      if (mountCompletionItemIcon(iconTarget, renderIcon as CompletionItemIconRenderer)) {
+        iconTarget.classList.add(`${completionItemTemplate.prefix}__kind--custom`)
+      }
+    })
   })
 
   const displayRef = derive({
@@ -284,6 +327,13 @@ export default definePlugin({
     triggerCharacter.offset = undefined
   }
 
+  function closeCompletions() {
+    resetTriggerCharacter()
+    keywordRef.current = -1
+    completions.length = 0
+    selectIndexRef.current = 0
+  }
+
   function acceptCompletion(shikitor: Shikitor) {
     const completion = snapshot(resolvedCompletions.current[selectIndexRef.current])
     if (completion) {
@@ -302,7 +352,7 @@ export default definePlugin({
           + keyword.length
       )
       shikitor.value = prefix + insertText + suffix
-      resetTriggerCharacter()
+      closeCompletions()
       setTimeout(() => {
         shikitor.focus(prefix.length + insertText.length)
       }, 0)
@@ -334,13 +384,14 @@ export default definePlugin({
 
             const cursor = cursorRef.current
             if (cursor === undefined) return
+            const position = shikitor.rawTextHelper.resolvePosition(cursor)
             let suggestions: CompletionItemInner[] = []
             if (char && triggerCharacters?.includes(char)) {
               const { rawTextHelper } = shikitor
               providerDispose?.()
               const { suggestions: newSugs = [], dispose } = await provideCompletionItems(
                 rawTextHelper,
-                cursor
+                position
               ) ?? {}
               suggestions = newSugs
               providerDispose = dispose
@@ -408,9 +459,7 @@ export default definePlugin({
       })
       ctx.on('shikitor/keydown', e => {
       if (!isMultipleKey(e) && e.key === 'Escape') {
-        resetTriggerCharacter()
-
-        keywordRef.current = -1
+        closeCompletions()
         return
       }
       if (

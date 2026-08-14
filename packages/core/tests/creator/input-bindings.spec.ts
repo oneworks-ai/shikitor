@@ -6,6 +6,7 @@ import {
   resolveShikitorInputHit
 } from '../../src/creator/controlled/inputBindingsControlled'
 import type { Shikitor } from '../../src/editor'
+import type { ShikitorInputEvent } from '../../src/input'
 import { getRawTextHelper } from '../../src/utils/getRawTextHelper'
 
 class FakeElement extends EventTarget {
@@ -20,6 +21,10 @@ class FakeElement extends EventTarget {
     super()
     this.ownerDocument = ownerDocument
     classNames.forEach(className => this.classNames.add(className))
+  }
+
+  get classList() {
+    return this.classNames
   }
 
   append(...elements: FakeElement[]) {
@@ -59,8 +64,9 @@ class FakeElement extends EventTarget {
 class FakeDocument {
   activeElement: FakeElement | null = null
   defaultView = { Node: class {} }
+  pointElement: FakeElement | null = null
   elementFromPoint() {
-    return null
+    return this.pointElement
   }
 }
 
@@ -115,6 +121,7 @@ describe('creator input bindings DOM routing', () => {
   beforeEach(() => {
     ownerDocument = new FakeDocument()
     vi.stubGlobal('Element', FakeElement)
+    vi.stubGlobal('HTMLElement', FakeElement)
   })
 
   afterEach(() => {
@@ -154,6 +161,28 @@ describe('creator input bindings DOM routing', () => {
     expect(hit(decoration)).toMatchObject({ zone: 'gutter-decoration', line: 2 })
     expect(hit(scrollbar)).toMatchObject({ zone: 'scrollbar' })
     expect(hit(new FakeElement(ownerDocument))).toMatchObject({ zone: 'outside' })
+  })
+
+  test('exposes the rendered node below the textarea for exact content hits', () => {
+    const root = new FakeElement(ownerDocument, 'shikitor')
+    const input = new FakeElement(ownerDocument, 'shikitor-input')
+    const output = new FakeElement(ownerDocument, 'shikitor-output')
+    const link = new FakeElement(ownerDocument, 'messenger-session-link')
+    root.append(input, output)
+    output.append(link)
+    ownerDocument.pointElement = link
+
+    const hit = resolveShikitorInputHit({
+      target: root as unknown as HTMLElement,
+      input: input as unknown as HTMLTextAreaElement,
+      rawTextHelper: getRawTextHelper('#frontend-review'),
+      eventTarget: input,
+      fallbackPosition: getRawTextHelper('#frontend-review').resolvePosition(0),
+      clientX: 12,
+      clientY: 8
+    })
+
+    expect(hit).toMatchObject({ zone: 'content', element: link })
   })
 
   test('dispatches synchronously, applies event policy, and cleans listeners', () => {
@@ -350,9 +379,9 @@ describe('creator input bindings DOM routing', () => {
     const input = new FakeElement(ownerDocument, 'shikitor-input')
     root.append(input)
     const context = new Context() as unknown as Parameters<typeof inputBindingsControlled>[0]['context']
-    const sources: string[] = []
+    const contextMenuEvents: ShikitorInputEvent[] = []
     context.on('shikitor/input', event => {
-      if (event.type === 'contextmenu') sources.push(event.pointer?.source ?? 'missing')
+      if (event.type === 'contextmenu') contextMenuEvents.push(event)
     })
     const { dispose } = inputBindingsControlled({
       target: root as unknown as HTMLElement,
@@ -363,7 +392,12 @@ describe('creator input bindings DOM routing', () => {
     })
 
     input.dispatchEvent(keyEvent('ContextMenu', 'ContextMenu'))
-    root.dispatchEvent(domEvent('contextmenu', { button: 0, detail: 0 }))
+    root.dispatchEvent(domEvent('contextmenu', {
+      button: 0,
+      detail: 0,
+      clientX: 0,
+      clientY: 0
+    }))
     input.dispatchEvent(keyEvent('F10', 'F10', { shiftKey: true }))
     root.dispatchEvent(domEvent('contextmenu', { button: 0, detail: 0 }))
 
@@ -389,16 +423,20 @@ describe('creator input bindings DOM routing', () => {
       button: 0,
       buttons: 0,
       detail: 0,
-      pointerType: 'mouse'
+      pointerType: 'mouse',
+      clientX: 12,
+      clientY: 8
     }))
 
-    expect(sources).toEqual([
+    expect(contextMenuEvents.map(event => event.pointer?.source ?? 'missing')).toEqual([
       'keyboard',
       'keyboard',
       'pointer',
       'pointer',
       'pointer'
     ])
+    expect(contextMenuEvents[0]?.hit.point).toBeUndefined()
+    expect(contextMenuEvents.at(-1)?.hit.point).toBeDefined()
     dispose()
   })
 

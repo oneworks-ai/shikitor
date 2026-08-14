@@ -9,6 +9,11 @@ import replacer from 'vite-plugin-replacer'
 export default defineConfig({
   base: process.env.BASE ?? '/',
   server: {
+    fs: {
+      // Playground cases exercise workspace plugins from source so newly
+      // added capability providers participate in the same HMR graph.
+      allow: [path.resolve(__dirname, '..')]
+    },
     port: 31971
   },
   optimizeDeps: {

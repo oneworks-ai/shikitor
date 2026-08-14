@@ -1,0 +1,59 @@
+.shikitor-context-menu {
+  position: absolute;
+  z-index: 70;
+  display: flex;
+  min-width: 196px;
+  overflow: hidden;
+  flex-direction: column;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--shikitor-fg-color) 18%, transparent);
+  border-radius: 8px;
+  color: var(--shikitor-fg-color);
+  background: color-mix(in srgb, var(--shikitor-bg-color) 96%, transparent);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 28%);
+  backdrop-filter: blur(14px);
+  font-family: var(--font-family, ui-monospace), monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  outline: none;
+}
+
+.shikitor-context-menu__item {
+  display: grid;
+  min-height: 32px;
+  align-items: center;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, var(--shikitor-fg-color) 12%, transparent);
+    outline: none;
+  }
+
+  &:disabled {
+    opacity: .42;
+  }
+}
+
+.shikitor-context-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--shikitor-fg-color) 72%, transparent);
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-size: 16px;
+}
+
+.shikitor-context-menu__shortcut {
+  color: color-mix(in srgb, var(--shikitor-fg-color) 56%, transparent);
+  font-size: 10px;
+}

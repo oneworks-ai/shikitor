@@ -1,19 +1,12 @@
 import { definePlugin } from '@shikitor/core'
 import type {} from '@shikitor/core/plugins/provide-completions'
 import { CompletionItemKind } from '@shikitor/core/plugins/provide-completions'
+import type {} from '@shikitor/core/plugins/provide-pointer'
 
-import type { LanguageServiceClient, LanguageServiceSnapshot } from './client'
+import type {
+  LanguageServiceClient
+} from './client'
 import { createTypeScriptLanguageService } from './typescript-adapter'
-
-declare module 'cordis' {
-  interface Context {
-    shikitorTypeScript: LanguageServiceClient
-  }
-
-  interface Events {
-    'shikitor/typescript-updated'(snapshot: LanguageServiceSnapshot): void
-  }
-}
 
 function completionKind(kind: string) {
   switch (kind) {
@@ -88,7 +81,7 @@ export function createTypeScriptCompletionProvider(client: LanguageServiceClient
 export default definePlugin({
   name: 'playground-typescript-language-service',
   provide: 'shikitorTypeScript',
-  inject: ['shikitor', 'shikitorCompletions'],
+  inject: ['shikitor', 'shikitorCompletions', 'shikitorPointer'],
   apply(ctx) {
     const { shikitor } = ctx
     const client = createTypeScriptLanguageService(shikitor.value)
@@ -102,6 +95,28 @@ export default definePlugin({
       '*',
       createTypeScriptCompletionProvider(client)
     )
+    const definitionAction = ctx.shikitorPointer.registerAction({
+      id: 'typescript.go-to-definition',
+      run(event) {
+        const offset = event.hit.position?.offset
+        if (offset === undefined) return false
+        client.updateDocument(shikitor.value)
+        const definition = client.getDefinition(offset)
+        if (!definition) return false
+        ctx.emit('shikitor/typescript-definition', definition)
+        shikitor.focus(definition.start)
+        return true
+      }
+    })
+    const definitionBinding = ctx.shikitorPointer.registerBinding({
+      id: 'typescript.go-to-definition.mod-click',
+      action: 'typescript.go-to-definition',
+      trigger: { type: 'click', button: 'primary', source: 'pointer' },
+      modifiers: ['Mod'],
+      target: 'content',
+      priority: 100,
+      policy: { preventDefault: 'handled' }
+    })
 
     ctx.on('shikitor/change', value => {
       client.updateDocument(value)
@@ -112,6 +127,8 @@ export default definePlugin({
 
     return () => {
       completionDisposable.dispose?.()
+      definitionBinding.dispose()
+      definitionAction.dispose()
       client[Symbol.dispose]()
     }
   }

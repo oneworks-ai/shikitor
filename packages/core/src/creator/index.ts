@@ -6,6 +6,7 @@ import { proxy, snapshot } from 'valtio/vanilla'
 
 import type { _KeyboardEvent } from '../base'
 import type { ResolvedSelection, Shikitor, ShikitorBase, ShikitorInternal, ShikitorOptions } from '../editor'
+import type { ShikitorInputService } from '../input'
 import { callUpdateDispatcher, completeAssign, listen } from '../utils' with {
   'unbundled-reexport': 'on'
 }
@@ -27,6 +28,7 @@ export async function create(
   options: CreateOptions = {}
 ): Promise<Shikitor> {
   let shikitor: Shikitor | undefined = undefined
+  let inputService: ShikitorInputService | undefined
   const context = new Context()
   const {
     onChange,
@@ -245,6 +247,10 @@ export async function create(
     get element() {
       return target
     },
+    get input() {
+      if (!inputService) throw new Error('Shikitor input service is not ready')
+      return inputService
+    },
     get value() {
       return valueRef.current
     },
@@ -295,14 +301,14 @@ export async function create(
     get cursor() {
       return snapshot(cursorRef).current
     },
-    focus(cursor) {
+    focus(cursor, focusOptions) {
       const { resolvePosition } = this.rawTextHelper
       const resolvedStartPos = resolvePosition(cursor ?? 0)
       input.setSelectionRange(
         resolvedStartPos.offset,
         resolvedStartPos.offset
       )
-      input.focus()
+      input.focus(focusOptions)
     },
     blur() {
       input.blur()
@@ -391,13 +397,14 @@ export async function create(
     e => context.emit('shikitor/keypress', e as _KeyboardEvent),
     true
   )
-  const { dispose: disposeInputBindings } = inputBindingsControlled({
+  const { service, dispose: disposeInputBindings } = inputBindingsControlled({
     target,
     input,
     context,
     shikitor,
     platform: inputOptions.input?.platform
   })
+  inputService = service
   disposes.push(disposeInputBindings)
   await installAllPlugins()
   checkAborted()

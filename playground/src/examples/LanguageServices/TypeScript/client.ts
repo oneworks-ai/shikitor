@@ -24,6 +24,15 @@ export interface LanguageCompletion {
   insertText?: string
 }
 
+export interface LanguageDefinition {
+  fileName: string
+  name: string
+  start: number
+  length: number
+  line: number
+  character: number
+}
+
 export interface LanguageServiceSnapshot {
   diagnostics: LanguageDiagnostic[]
   hover?: LanguageHover
@@ -43,6 +52,7 @@ export interface LanguageServiceClient extends Disposable {
   updateDocument(value: string): void
   getDiagnostics(): LanguageDiagnostic[]
   getHover(position: number): LanguageHover | undefined
+  getDefinition(position: number): LanguageDefinition | undefined
   getCompletions(position: number, limit?: number): LanguageCompletion[]
   inspect(position: number): LanguageServiceSnapshot
 }

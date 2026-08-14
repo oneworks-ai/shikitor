@@ -456,6 +456,7 @@ export function createInputEventsTraceRecorder(options: {
 interface RuntimeAttachment {
   bindings: { dispose(): void }
   actions: readonly { dispose(): void }[]
+  observation: { dispose(): void }
   service: import('@shikitor/core').ShikitorInputService
 }
 
@@ -545,23 +546,24 @@ export function createInputEventsRuntime(
 
   const plugin = definePlugin({
     name: 'playground-input-events-runtime',
-    inject: ['shikitor', 'shikitorInput'],
+    inject: ['shikitor'],
     apply(ctx) {
-      const service = ctx.shikitorInput
+      const service = ctx.shikitor.input
       platform = service.platform
       const attachment: RuntimeAttachment = {
         service,
         actions: registerActions(service),
-        bindings: service.registerBindings(compileInputEventBindings(config))
+        bindings: service.registerBindings(compileInputEventBindings(config)),
+        observation: service.subscribe((event, summary) => {
+          if (trace.record(event, summary)) publish()
+        })
       }
       attachments.add(attachment)
-      ctx.on('shikitor/input', (event, summary) => {
-        if (trace.record(event, summary)) publish()
-      })
       publish()
 
       return () => {
         if (!attachments.delete(attachment)) return
+        attachment.observation.dispose()
         attachment.bindings.dispose()
         attachment.actions.forEach(disposable => disposable.dispose())
       }
