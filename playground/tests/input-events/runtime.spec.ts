@@ -94,15 +94,18 @@ function applyRuntime(
     event: ShikitorInputEvent,
     summary: InputDispatchSummary
   ) => void) | undefined
-  const context = {
-    shikitor: {},
-    shikitorInput: service,
+  type RuntimeContext = {
+    shikitor: { input: typeof service }
+    on(name: string, listener: typeof observe): void
+  }
+  const context: RuntimeContext = {
+    shikitor: { input: service },
     on(name: string, listener: typeof observe) {
       if (name === 'shikitor/input') observe = listener
     }
   }
   const plugin = runtime.plugin as unknown as {
-    apply(context: typeof context): (() => void) | void
+    apply(context: RuntimeContext): (() => void) | void
   }
   const dispose = plugin.apply(context)
   return {

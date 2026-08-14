@@ -1,9 +1,10 @@
-import type { IDisposable, ResolvedTextRange } from '@shikitor/core'
+import type {
+  IDisposable,
+  ResolvedTextRange,
+  ShikitorInputEvent
+} from '@shikitor/core'
 import { definePlugin } from '@shikitor/core'
 import type { Awaitable } from '@shikitor/core/types'
-import { throttle } from '@shikitor/core/utils' with {
-  'unbundled-reexport': 'on'
-}
 
 const name = 'provide-mouse'
 
@@ -13,8 +14,22 @@ export interface OnHoverElementContext {
   raw: string
 }
 
+export interface ShikitorMouseProvider {
+  onHover?(
+    range: ResolvedTextRange,
+    context: OnHoverElementContext,
+    event: ShikitorInputEvent
+  ): Awaitable<void>
+}
+
+/**
+ * Compatibility facade for the original mouse provider API.
+ *
+ * New plugins should consume `shikitorPointer` or `editor.input.pointer`
+ * directly. This adapter intentionally owns no DOM listeners or hit testing.
+ */
 export interface ShikitorMouseService {
-  registerMouseProvider(provider: {}): IDisposable
+  registerMouseProvider(provider: ShikitorMouseProvider): IDisposable
 }
 
 declare module 'cordis' {
@@ -30,73 +45,58 @@ export default definePlugin({
   name,
   inject: ['shikitor'],
   apply(ctx) {
-    const shikitor = ctx.shikitor
-    const input = shikitor.element.querySelector(
-      `:scope > .${'shikitor'}-container > .${'shikitor'}-input`
-    ) as HTMLTextAreaElement
-    const output = shikitor.element.querySelector(
-      `:scope > .${'shikitor'}-container > .${'shikitor'}-output`
-    ) as HTMLElement
-    let prevOutputHoverElement: Element | null = null
-    const onMousemove = throttle(e => {
-          input.style.pointerEvents = 'none'
-          output.style.pointerEvents = 'auto'
-          const outputHoverElement = document.elementFromPoint(e.clientX, e.clientY)
-          input.style.pointerEvents = ''
-          output.style.pointerEvents = ''
-          if (outputHoverElement === prevOutputHoverElement) {
-            return
-          }
-          prevOutputHoverElement = outputHoverElement
-          if (outputHoverElement === null) {
-            return
-          }
-          if (
-            outputHoverElement.className.includes('shikitor')
-            && outputHoverElement.className.includes('output')
-          ) {
-            return
-          }
+    const editor = ctx.shikitor
+    const providers = new Set<ShikitorMouseProvider>()
+    const hasPointerEvents = !!editor.element.ownerDocument.defaultView?.PointerEvent
+    let previousOffset = -1
 
-          if (!outputHoverElement?.className.includes('position')) {
-            return
-          }
+    const subscription = editor.input.pointer.subscribe(event => {
+      const expectedType = hasPointerEvents ? 'pointermove' : 'mousemove'
+      if (
+        event.type === 'pointerleave'
+        || event.type === 'mouseleave'
+        || event.type === 'pointercancel'
+      ) {
+        previousOffset = -1
+        return
+      }
+      if (
+        event.type !== expectedType
+        || event.hit.zone !== 'content'
+        || !event.hit.position
+      ) return
+      if (event.hit.position.offset === previousOffset) return
+      previousOffset = event.hit.position.offset
 
-          const offsetStr = /offset:(\d+)/
-            .exec(outputHoverElement.className)
-            ?.[1]
-          if (!offsetStr) {
-            return
-          }
-          const offset = Number(offsetStr)
-          if (isNaN(offset)) {
-            return
-          }
-          const [line, start, end] = /position:(\d+):(\d+),(\d+)/
-            .exec(outputHoverElement.className)
-            ?.slice(1)
-            ?.map(Number)
-            ?? []
-          if (!line || !start || !end || [line, start, end].some(isNaN)) {
-            return
-          }
-
-          ctx.emit('shikitor/hover', {
-            start: { offset, line, character: start },
-            end: { offset, line, character: end }
-          }, {
-            content: input.value.slice(start - 1, end - 1),
-            element: outputHoverElement,
-            raw: input.value
+      const element = event.hit.element instanceof Element
+        ? event.hit.element
+        : editor.element
+      const range = event.hit.token
+        ? { start: event.hit.token.start, end: event.hit.token.end }
+        : editor.rawTextHelper.resolveTextRange({
+            start: event.hit.position.offset,
+            end: Math.min(editor.value.length, event.hit.position.offset + 1)
           })
-    }, 50)
-    input.addEventListener('mousemove', onMousemove)
-    ctx.provide('shikitorMouse', {
-      registerMouseProvider() {
-        // TODO
-        return {}
+      const hoverContext = {
+        content: editor.value.slice(range.start.offset, range.end.offset),
+        element,
+        raw: editor.value
+      }
+      ctx.emit('shikitor/hover', range, hoverContext)
+      for (const provider of [...providers]) {
+        void provider.onHover?.(range, hoverContext, event)
       }
     })
-    return () => input.removeEventListener('mousemove', onMousemove)
+
+    ctx.provide('shikitorMouse', {
+      registerMouseProvider(provider) {
+        providers.add(provider)
+        return { dispose: () => providers.delete(provider) }
+      }
+    })
+    return () => {
+      subscription.dispose()
+      providers.clear()
+    }
   }
 })

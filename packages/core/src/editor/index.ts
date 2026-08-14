@@ -3,7 +3,7 @@ import type { BundledLanguage, BundledTheme } from 'shiki'
 
 import type { _KeyboardEvent, RefObject, TextRange } from '../base'
 import type { ShikitorContext } from '../context'
-import type { InputPlatform } from '../input'
+import type { InputPlatform, ShikitorInputService } from '../input'
 import type { InputShikitorPlugin } from '../plugin'
 import type { RecursiveReadonly } from '../types'
 import type { UpdateDispatcher } from '../utils/callUpdateDispatcher'
@@ -89,6 +89,8 @@ export interface ShikitorSupportPlugin {
 
 export interface ShikitorBase {
   readonly element: HTMLElement
+  /** Normalized editor input namespace shared by capability plugins. */
+  readonly input: ShikitorInputService
   value: string
 
   language?: BundledLanguage
@@ -101,7 +103,7 @@ export interface ShikitorBase {
   updateOptions: UpdateDispatcher<RecursiveReadonly<ShikitorOptions>, [], Promise<void>, Shikitor['options']>
 
   readonly cursor: ResolvedCursor
-  focus: (cursor?: Cursor) => void
+  focus: (cursor?: Cursor, options?: FocusOptions) => void
   blur: () => void
 
   readonly selections: readonly ResolvedSelection[]

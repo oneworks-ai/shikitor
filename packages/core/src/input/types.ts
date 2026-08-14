@@ -340,8 +340,34 @@ export interface InputDisposable {
   dispose(): void
 }
 
+export type InputChannelName = 'pointer' | 'keyboard' | 'text'
+
+export type ShikitorInputListener = (
+  event: ShikitorInputEvent,
+  summary: InputDispatchSummary
+) => void
+
+export interface ShikitorInputChannel {
+  subscribe(listener: ShikitorInputListener): InputDisposable
+}
+
+export interface ShikitorInputCapabilityService extends ShikitorInputChannel {
+  readonly platform: InputPlatform
+  registerAction<Args = unknown>(action: InputAction<Args>): InputDisposable
+  registerBinding<Args = unknown>(binding: InputBinding<Args>): InputDisposable
+  registerBindings(bindings: readonly InputBinding[]): InputDisposable
+}
+
 export interface ShikitorInputService {
   readonly platform: InputPlatform
+  /** Pointer, native mouse, click, context-menu and wheel events. */
+  readonly pointer: ShikitorInputChannel
+  /** Keyboard events after platform modifier normalization. */
+  readonly keyboard: ShikitorInputChannel
+  /** beforeinput, input and IME composition events. */
+  readonly text: ShikitorInputChannel
+  /** Observe every normalized input event after binding dispatch. */
+  subscribe(listener: ShikitorInputListener): InputDisposable
   registerAction<Args = unknown>(action: InputAction<Args>): InputDisposable
   registerBinding<Args = unknown>(binding: InputBinding<Args>): InputDisposable
   registerBindings(bindings: readonly InputBinding[]): InputDisposable

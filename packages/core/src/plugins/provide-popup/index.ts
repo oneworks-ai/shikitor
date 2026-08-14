@@ -140,11 +140,22 @@ export default definePlugin({
         const { providePopups, ...meta } = provider
         const popupsPromise = Promise.resolve(providePopups())
 
+        let disposed = false
+        let providedListDisposed = false
         let pushedFirstPopupRef: ResolvedPopup | undefined
         let pushedPopupsLength = 0
         let popupsProvideDispose: (() => void) | undefined
+        const disposeProvidedList = (dispose?: () => void) => {
+          if (providedListDisposed) return
+          providedListDisposed = true
+          dispose?.()
+        }
         popupsPromise.then(({ dispose, popups: newPopups }) => {
           popupsProvideDispose = dispose
+          if (disposed) {
+            disposeProvidedList(dispose)
+            return
+          }
           const resolvedPopups = newPopups.map(popup => ({
             ...meta,
             ...popup
@@ -156,8 +167,11 @@ export default definePlugin({
         const removeNewPopups = () => {
           if (pushedFirstPopupRef === undefined) return
           const firstIndex = popups.indexOf(pushedFirstPopupRef)
+          if (firstIndex === -1) return
 
           popups.splice(firstIndex, pushedPopupsLength)
+          pushedFirstPopupRef = undefined
+          pushedPopupsLength = 0
         }
         const disposePositionRerender = meta.position === 'relative'
           ? scopeWatch(async get => {
@@ -169,7 +183,9 @@ export default definePlugin({
             for (let i = firstIndex; i < firstIndex + pushedPopupsLength; i++) {
               const popup = popups[i]
               if (popup.position === 'relative') {
-                popup.cursors = [cursor]
+                popup.cursors = cursor === undefined
+                  ? []
+                  : [shikitor.rawTextHelper.resolvePosition(cursor)]
                 popup.selections = shikitor.selections
               }
             }
@@ -177,10 +193,12 @@ export default definePlugin({
           : undefined
         return {
           dispose() {
+            if (disposed) return
+            disposed = true
             if (popupsProvideDispose) {
-              popupsProvideDispose()
+              disposeProvidedList(popupsProvideDispose)
             } else {
-              popupsPromise.then(({ dispose }) => dispose?.())
+              popupsPromise.then(({ dispose }) => disposeProvidedList(dispose))
             }
             disposePositionRerender?.()
             removeNewPopups()

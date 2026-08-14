@@ -3,6 +3,7 @@ import './index.scss'
 import {
   formatAriaKeyShortcut,
   formatBinding,
+  type InputShikitorPlugin,
   type InputPlatform,
   type Shikitor
 } from '@shikitor/core'
@@ -27,6 +28,12 @@ import {
 import { useShikitorCreate } from '../../hooks/useShikitorCreate'
 import { useQueries } from '../../hooks/useQueries'
 import { useI18n } from '../../i18n'
+import contextMenuPlugin, {
+  type ContextMenuItem
+} from '@shikitor/core/plugins/context-menu'
+import provideKeyboard from '@shikitor/core/plugins/provide-keyboard'
+import providePointer from '@shikitor/core/plugins/provide-pointer'
+import provideTextInput from '@shikitor/core/plugins/provide-text-input'
 import {
   createInputEventsRuntime,
   type InputEventsBindingOverride,
@@ -47,7 +54,7 @@ export function registerInput(action: InputAction) {
 
 type TraceMode = 'normalized' | 'raw'
 type EventChannel = 'pointer' | 'mouse' | 'both'
-type CaseKind = 'pointer' | 'keyboard' | 'combinations' | 'platform'
+type CaseKind = 'pointer' | 'contextmenu' | 'keyboard' | 'combinations' | 'platform'
 
 const caseMeta: Record<CaseKind, {
   id: string
@@ -63,23 +70,30 @@ const caseMeta: Record<CaseKind, {
     description: 'input.pointer.description',
     tags: ['Pointer', 'Mouse']
   },
+  contextmenu: {
+    id: 'input-events-context-menu',
+    index: '02',
+    title: 'input.contextmenu.title',
+    description: 'input.contextmenu.description',
+    tags: ['Context menu', 'Cordis']
+  },
   keyboard: {
     id: 'input-events-keyboard',
-    index: '02',
+    index: '03',
     title: 'input.keyboard.title',
     description: 'input.keyboard.description',
     tags: ['Keyboard', 'IME']
   },
   combinations: {
     id: 'input-events-combinations',
-    index: '03',
+    index: '04',
     title: 'input.combinations.title',
     description: 'input.combinations.description',
     tags: ['Bindings', 'Cordis']
   },
   platform: {
     id: 'input-events-platform',
-    index: '04',
+    index: '05',
     title: 'input.platform.title',
     description: 'input.platform.description',
     tags: ['Platform', 'Mod']
@@ -103,6 +117,7 @@ function actionTranslationKey(actionId: string) {
     case 'go-to-definition': return 'input.action.goToDefinition'
     case 'inspect-context': return 'input.action.inspectContext'
     case 'open-command-palette': return 'input.action.commandPalette'
+    case 'shikitor-context-menu.open': return 'input.action.contextMenu'
     default: return 'input.action.saveFile'
   }
 }
@@ -157,12 +172,12 @@ function allowEntry(
     if (entry.composition) return composition
     return false
   }
+  if (kind === 'contextmenu') return entry.type === 'contextmenu'
   return true
 }
 
 function TracePanel({
   snapshot,
-  mounts,
   paused,
   mode,
   entries,
@@ -172,7 +187,6 @@ function TracePanel({
   t
 }: {
   snapshot: InputEventsSnapshot
-  mounts: number
   paused: boolean
   mode: TraceMode
   entries: readonly InputEventsTraceEntry[]
@@ -181,17 +195,9 @@ function TracePanel({
   onClear(): void
   t(key: string, params?: Record<string, string | number>): string
 }) {
-  const actions = Object.values(snapshot.actionCounts).reduce((sum, count) => sum + count, 0)
   return (
     <div className='input-events-workbench'>
       <div className='input-events-editor'>
-        <div className='input-events-editor__status'>
-          <span className={`input-events-live${paused ? ' input-events-live--paused' : ''}`}>
-            <i />{t(paused ? 'input.common.disabled' : 'input.common.active')}
-          </span>
-          <span><b>{actions}</b> {t('input.common.actions')}</span>
-          <span><b>{mounts}</b> {t('input.common.mounts')}</span>
-        </div>
         <div className='input-events-editor__slot'>{editor}</div>
       </div>
       {snapshot.lastAction && (
@@ -237,10 +243,13 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
   const query = queries.value
   const create = useShikitorCreate()
   const runtime = useMemo(() => createInputEventsRuntime(), [])
-  const plugins = useMemo(() => [runtime.plugin], [runtime])
   const snapshot = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot, runtime.getSnapshot)
   const [value, setValue] = useState(sampleCode)
-  const [mounts, setMounts] = useState(0)
+  const [contextMenuAction, setContextMenuAction] = useState<string>()
+  const [editorColors, setEditorColors] = useState({
+    bg: query.theme === 'light' ? '#fff' : '#0d1117',
+    fg: query.theme === 'light' ? '#24292f' : '#e6edf3'
+  })
   const [paused, setPaused] = useState(false)
   const [pausedTrace, setPausedTrace] = useState<readonly InputEventsTraceEntry[]>([])
   const mode: TraceMode = query[`code-editor.events.${kind}.trace`] === 'raw' ? 'raw' : 'normalized'
@@ -252,6 +261,8 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
     : 'primary'
   const motion = readQueryBoolean(query, 'code-editor.events.pointer.motion')
   const contextMenu = readQueryBoolean(query, 'code-editor.events.pointer.context')
+  const contextMenuEnabled = readQueryBoolean(query, 'code-editor.events.contextmenu.enabled')
+  const contextMenuKeyboard = readQueryBoolean(query, 'code-editor.events.contextmenu.keyboard')
   const keyEvents = readQueryBoolean(query, 'code-editor.events.keyboard.keys')
   const textInput = readQueryBoolean(query, 'code-editor.events.keyboard.text')
   const composition = readQueryBoolean(query, 'code-editor.events.keyboard.composition')
@@ -275,14 +286,53 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
     ? query['code-editor.events.platform.preview'] as InputPlatform
     : 'auto'
   const selectedPlatform = previewPlatform === 'auto' ? snapshot.platform : previewPlatform
+  const contextMenuItems = useMemo<readonly ContextMenuItem[]>(() => [
+    {
+      id: 'definition',
+      icon: 'arrow_circle_right',
+      label: t('input.contextmenu.definition'),
+      shortcut: 'F12',
+      onSelect: () => setContextMenuAction(t('input.contextmenu.definition'))
+    },
+    {
+      id: 'references',
+      icon: 'manage_search',
+      label: t('input.contextmenu.references'),
+      shortcut: '⇧ F12',
+      onSelect: () => setContextMenuAction(t('input.contextmenu.references'))
+    },
+    {
+      id: 'copy-symbol',
+      icon: 'content_copy',
+      label: t('input.contextmenu.copySymbol'),
+      shortcut: 'Mod C',
+      onSelect: () => setContextMenuAction(t('input.contextmenu.copySymbol'))
+    }
+  ], [t])
+  const plugins = useMemo<InputShikitorPlugin[]>(() => [
+    ...(kind === 'pointer'
+      ? [providePointer]
+      : kind === 'keyboard'
+        ? [provideKeyboard, provideTextInput]
+        : [providePointer, provideKeyboard]),
+    runtime.plugin,
+    ...(kind === 'contextmenu' && contextMenuEnabled
+      ? [[contextMenuPlugin, {
+          ariaLabel: t('input.contextmenu.ariaLabel'),
+          items: contextMenuItems,
+          sources: contextMenuKeyboard ? ['pointer', 'keyboard'] : ['pointer']
+        }] as const]
+      : [])
+  ], [contextMenuEnabled, contextMenuItems, contextMenuKeyboard, kind, runtime, t])
   const options = useMemo(() => ({
     language: 'typescript' as const,
-    theme: 'github-dark' as const,
+    theme: query.theme === 'light' ? 'github-light' as const : 'github-dark' as const,
     lineNumbers: 'on' as const,
+    hideSelfCursorUsername: true,
     input: kind === 'platform' && previewPlatform !== 'auto'
       ? { platform: previewPlatform }
       : undefined
-  }), [kind, previewPlatform])
+  }), [kind, previewPlatform, query.theme])
   const editorRef = useRef<Shikitor>()
   const ariaKeyShortcuts = useMemo(() => snapshot.bindings
     .filter(binding => binding.enabled)
@@ -295,7 +345,9 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
       ? new Set<InputEventsPresetId>(['mod-primary-click'])
       : kind === 'keyboard'
         ? new Set<InputEventsPresetId>(['command-palette', 'save-file'])
-        : new Set<InputEventsPresetId>(['mod-primary-click', 'control-context-menu', 'command-palette', 'save-file'])
+        : kind === 'contextmenu'
+          ? new Set<InputEventsPresetId>()
+          : new Set<InputEventsPresetId>(['mod-primary-click', 'control-context-menu', 'command-palette', 'save-file'])
     const config: InputEventsConfig = {
       bindings: Object.entries(enabled).map(([id, active]) => ({
         id: id as InputEventsPresetId,
@@ -347,12 +399,11 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
     editorRef.current = editor
     const shortcuts = runtime.getSnapshot().bindings
       .filter(binding => binding.enabled)
-      .map(({ binding }) => formatAriaKeyShortcut(binding, editor.context.shikitorInput.platform))
+      .map(({ binding }) => formatAriaKeyShortcut(binding, editor.input.platform))
       .filter((value): value is string => !!value)
     const textarea = editor.element.querySelector('textarea')
     if (shortcuts.length) textarea?.setAttribute('aria-keyshortcuts', shortcuts.join(' '))
     else textarea?.removeAttribute('aria-keyshortcuts')
-    setMounts(count => count + 1)
   }, [runtime])
   useEffect(() => {
     const editor = editorRef.current
@@ -382,6 +433,7 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
       options={options}
       plugins={plugins}
       onMounted={handleMounted}
+      onColorChange={setEditorColors}
     />
   )
 
@@ -392,11 +444,23 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
       title={t(meta.title)}
       description={t(meta.description)}
       tags={meta.tags}
+      plugins={kind === 'contextmenu'
+        ? ['provide-pointer', 'provide-keyboard', 'shikitor-context-menu']
+        : kind === 'pointer'
+          ? ['provide-pointer']
+          : kind === 'keyboard'
+            ? ['provide-keyboard', 'provide-text-input']
+            : ['provide-pointer', 'provide-keyboard']}
       preview={(
-        <div className='input-events-preview'>
+        <div
+          className='input-events-preview'
+          style={{
+            '--editor-bg': editorColors.bg || (query.theme === 'light' ? '#fff' : '#0d1117'),
+            '--editor-fg': editorColors.fg || (query.theme === 'light' ? '#24292f' : '#e6edf3')
+          } as React.CSSProperties & Record<`--${string}`, string>}
+        >
           <TracePanel
             snapshot={snapshot}
-            mounts={mounts}
             paused={paused}
             mode={mode}
             entries={visibleTrace}
@@ -429,6 +493,28 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
         <SwitchField icon='open_with' label={t('input.pointer.motion')} description={t('input.pointer.motionHelp')}><Switch size='small' value={motion} onChange={value => queries.set('code-editor.events.pointer.motion', String(value))} /></SwitchField>
         <AdvancedConfig label={t('input.common.advanced')}>
           <SwitchField icon='menu_open' label={t('input.pointer.contextMenu')} description={t('input.pointer.contextMenuHelp')}><Switch size='small' value={contextMenu} onChange={value => queries.set('code-editor.events.pointer.context', String(value))} /></SwitchField>
+          <ConfigField icon='visibility' label={t('input.common.trace')}>
+            <Radio.Group variant='default-filled' value={mode} onChange={value => queries.set(`code-editor.events.${kind}.trace`, value as string)} options={[
+              { label: t('input.common.normalized'), value: 'normalized' },
+              { label: t('input.common.raw'), value: 'raw' }
+            ]} />
+          </ConfigField>
+        </AdvancedConfig>
+      </>}
+      {kind === 'contextmenu' && <>
+        <SwitchField icon='menu_open' label={t('input.contextmenu.enabled')} description={t('input.contextmenu.enabledHelp')}>
+          <Switch size='small' value={contextMenuEnabled} onChange={value => queries.set('code-editor.events.contextmenu.enabled', String(value))} />
+        </SwitchField>
+        <SwitchField icon='keyboard' label={t('input.contextmenu.keyboard')} description={t('input.contextmenu.keyboardHelp')}>
+          <Switch size='small' value={contextMenuKeyboard} onChange={value => queries.set('code-editor.events.contextmenu.keyboard', String(value))} />
+        </SwitchField>
+        <ConfigField icon='task_alt' label={t('input.contextmenu.lastAction')} description={t('input.contextmenu.hint')}>
+          <div className={`input-events-context-result${contextMenuAction ? ' is-active' : ''}`}>
+            <span className='shikitor-icon'>{contextMenuAction ? 'check_circle' : 'right_click'}</span>
+            {contextMenuAction ?? t('input.contextmenu.waiting')}
+          </div>
+        </ConfigField>
+        <AdvancedConfig label={t('input.common.advanced')}>
           <ConfigField icon='visibility' label={t('input.common.trace')}>
             <Radio.Group variant='default-filled' value={mode} onChange={value => queries.set(`code-editor.events.${kind}.trace`, value as string)} options={[
               { label: t('input.common.normalized'), value: 'normalized' },
@@ -505,5 +591,5 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
 }
 
 export default function InputEvents() {
-  return <div className='input-events-examples'>{(['pointer', 'keyboard', 'combinations', 'platform'] as const).map(kind => <InputEventCase key={kind} kind={kind} />)}</div>
+  return <div className='input-events-examples'>{(['pointer', 'contextmenu', 'keyboard', 'combinations', 'platform'] as const).map(kind => <InputEventCase key={kind} kind={kind} />)}</div>
 }

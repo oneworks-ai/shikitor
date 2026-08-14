@@ -18,6 +18,11 @@
   --pg-sidebar: rgba(255, 255, 255, .96);
   --pg-header: rgba(255, 255, 255, .92);
   --pg-control: #fff;
+  --pg-runtime-bg: #f3fbf7;
+  --pg-runtime-border: #dff3e9;
+  --pg-runtime-icon: #21a36f;
+  --pg-runtime-title: #237655;
+  --pg-runtime-description: #67a68b;
 
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -41,6 +46,11 @@
     --pg-sidebar: rgba(23, 26, 34, .97);
     --pg-header: rgba(17, 20, 27, .92);
     --pg-control: #20242d;
+    --pg-runtime-bg: rgba(24, 126, 86, .14);
+    --pg-runtime-border: rgba(79, 209, 155, .24);
+    --pg-runtime-icon: #4fd19b;
+    --pg-runtime-title: #92e4c1;
+    --pg-runtime-description: #72b99b;
 
     color-scheme: dark;
   }
@@ -289,14 +299,14 @@
   gap: 9px;
   margin: 12px;
   padding: 11px 12px;
-  border: 1px solid #dff3e9;
+  border: 1px solid var(--pg-runtime-border);
   border-radius: 10px;
-  background: #f3fbf7;
+  background: var(--pg-runtime-bg);
 
   > svg {
     width: 16px;
     height: 16px;
-    color: #21a36f;
+    color: var(--pg-runtime-icon);
   }
 
   > div {
@@ -306,12 +316,12 @@
   }
 
   strong {
-    color: #237655;
+    color: var(--pg-runtime-title);
     font-size: 10px;
   }
 
   span {
-    color: #67a68b;
+    color: var(--pg-runtime-description);
     font-size: 9px;
   }
 }
@@ -346,7 +356,6 @@
     font-weight: 680;
     letter-spacing: -.025em;
   }
-
 }
 
 .playground-breadcrumb {
@@ -368,8 +377,7 @@
   gap: 10px;
 }
 
-.playground-github,
-.playground-theme {
+.playground-github, .playground-theme {
   display: grid;
   place-items: center;
   width: 32px;
@@ -432,6 +440,17 @@
   padding: 22px 22px 56px;
 }
 
+.playground-content--flush {
+  width: 100%;
+  height: calc(100% - 72px);
+  max-width: none;
+  min-height: 0;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .playground-loading {
   display: grid;
   min-height: 400px;
@@ -462,8 +481,7 @@
     justify-content: center;
     padding-inline: 0;
 
-    span,
-    svg {
+    span, svg {
       display: none;
     }
   }
@@ -497,9 +515,7 @@
     height: 42px;
     padding: 0;
 
-    span,
-    small,
-    &::before {
+    span, small, &::before {
       display: none;
     }
   }
@@ -528,5 +544,9 @@
 
   .playground-content {
     padding: 18px 14px 40px;
+  }
+
+  .playground-content--flush {
+    padding: 0;
   }
 }

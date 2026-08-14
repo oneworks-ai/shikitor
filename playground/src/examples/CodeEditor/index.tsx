@@ -106,6 +106,7 @@ const { code: hashCode } = analyzeHash()
 export default function CodeEditor() {
   const { locale, t } = useI18n()
   const queries = useQueries<{
+    theme: ThemeMode
     'code-editor.theme.family': ThemeFamily
     'code-editor.theme.mode': ThemeMode
     'code-editor.theme.language': BundledLanguage
@@ -140,7 +141,10 @@ export default function CodeEditor() {
   const themeFamily = query['code-editor.theme.family'] in themePairs
     ? query['code-editor.theme.family'] as ThemeFamily
     : 'github'
-  const themeMode: ThemeMode = query['code-editor.theme.mode'] === 'light' ? 'light' : 'dark'
+  const configuredThemeMode = query['code-editor.theme.mode']
+  const themeMode: ThemeMode = configuredThemeMode === 'light' || configuredThemeMode === 'dark'
+    ? configuredThemeMode
+    : query.theme === 'dark' ? 'dark' : 'light'
   const language = query['code-editor.theme.language'] ?? 'typescript'
   const theme = themePairs[themeFamily][themeMode] as BundledTheme
   const themeLineNumbers = query['code-editor.theme.line-numbers'] !== 'false'
@@ -154,7 +158,7 @@ export default function CodeEditor() {
     ? configuredCurrentLineColor
     : defaultCurrentLineColor
 
-  const cursorBubble = query['code-editor.cursor.bubble'] !== 'false'
+  const cursorBubble = query['code-editor.cursor.bubble'] === 'true'
   const cursorColor = query['code-editor.cursor.color'] ?? '#7c6cf2'
   const cursorSize = Math.min(8, Math.max(1, Number(query['code-editor.cursor.size']) || 2))
   const cursorType: CursorType = ['line', 'block', 'underline'].includes(query['code-editor.cursor.type'])
@@ -212,7 +216,7 @@ export default function CodeEditor() {
   const [cursorColors, setCursorColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const [completionColors, setCompletionColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const [editingColors, setEditingColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
-  const [behaviorColors, setBehaviorColors] = useState({ bg: '#fff', fg: '#24292f' })
+  const [behaviorColors, setBehaviorColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const [lineWidgetColors, setLineWidgetColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const [gutterColors, setGutterColors] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const cursorEditorRef = useRef<Shikitor>(null)
@@ -245,13 +249,13 @@ export default function CodeEditor() {
   const handleEditingMounted = useCallback((editor: Shikitor) => {
     if (editingInitialFocusRef.current) return
     editingInitialFocusRef.current = true
-    editor.focus({ line: 1, character: 0 })
+    editor.focus({ line: 1, character: 0 }, { preventScroll: true })
   }, [])
 
   const handleLineWidgetMounted = useCallback((editor: Shikitor) => {
     if (lineWidgetInitialFocusRef.current) return
     lineWidgetInitialFocusRef.current = true
-    editor.focus({ line: 2, character: 16 })
+    editor.focus({ line: 2, character: 16 }, { preventScroll: true })
   }, [])
 
   useEffect(updateGutterProbe)
@@ -265,15 +269,15 @@ export default function CodeEditor() {
   }), [language, theme, themeCurrentLine, themeCurrentLineColor, themeLineNumbers])
   const cursorOptions = useMemo(() => ({
     language: 'typescript' as const,
-    theme: 'github-dark' as const,
+    theme,
     hideSelfCursorUsername: !cursorBubble,
     cursor: { line: 3, character: 10 }
-  }), [cursorBubble])
+  }), [cursorBubble, theme])
   const completionOptions = useMemo(() => ({
     language: 'typescript' as const,
-    theme: 'github-dark' as const,
+    theme,
     hideSelfCursorUsername: true
-  }), [])
+  }), [theme])
   const completionPlugins = useMemo(() => {
     const plugins: InputShikitorPlugin[] = []
     if (completionPopup) {
@@ -294,9 +298,9 @@ export default function CodeEditor() {
   }, [completionGhostText, completionPlacement, completionPopup, locale])
   const editingOptions = useMemo(() => ({
     language: 'typescript' as const,
-    theme: 'github-dark' as const,
+    theme,
     hideSelfCursorUsername: true
-  }), [])
+  }), [theme])
   const editingPlugins = useMemo(() => {
     const plugins: InputShikitorPlugin[] = []
     if (editingBracketMatcher) plugins.push(bracketMatcher)
@@ -313,17 +317,17 @@ export default function CodeEditor() {
   }, [editingBracketMatcher, editingCodeFolding, editingCodeStyler, editingSymmetryOperator, locale])
   const behaviorOptions = useMemo(() => ({
     language: 'typescript' as const,
-    theme: 'github-light' as const,
+    theme,
     lineNumbers: behaviorLineNumbers ? 'on' as const : 'off' as const,
     readOnly: behaviorReadOnly,
     placeholder: behaviorPlaceholder
-  }), [behaviorLineNumbers, behaviorPlaceholder, behaviorReadOnly])
+  }), [behaviorLineNumbers, behaviorPlaceholder, behaviorReadOnly, theme])
   const lineWidgetOptions = useMemo(() => ({
     language: 'typescript' as const,
-    theme: 'github-dark' as const,
+    theme,
     hideSelfCursorUsername: true,
     readOnly: true
-  }), [])
+  }), [theme])
   const widgetDefinitions = useMemo<LineWidget[]>(() => {
     if (!lineWidgetVisible) return []
     const isChinese = locale === 'zh-CN'

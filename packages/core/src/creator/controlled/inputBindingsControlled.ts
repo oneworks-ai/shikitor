@@ -215,9 +215,15 @@ export function resolveShikitorInputHit({
     clientY
   )
   const resolvedPosition = position ?? fallbackPosition
+  const resolvedElement = renderedElement && target.contains(renderedElement)
+    ? renderedElement
+    : element
   return {
     zone: 'content',
-    element,
+    // Pointer-family events originate from the transparent textarea overlay.
+    // Expose the rendered node below it so consumers can distinguish an exact
+    // decoration/token hit from whitespace that merely resolves to a cursor.
+    element: resolvedElement,
     ...(resolvedPosition
       ? {
           line: resolvedPosition.line,
@@ -280,7 +286,9 @@ function normalizeNativeEvent(
     selections: shikitor.selections,
     hit: {
       ...hit,
-      point: clientX === undefined || clientY === undefined
+      point: contextMenuSource === 'keyboard'
+        || clientX === undefined
+        || clientY === undefined
         ? undefined
         : {
             clientX,
@@ -473,7 +481,12 @@ export function inputBindingsControlled({
         lastKeyboardContextMenu = { at: Date.now(), target: nativeEvent.target }
       }
     }
-    const { clientX, clientY } = readClientPoint(nativeEvent)
+    const contextMenuSource = nativeEvent.type === 'contextmenu'
+      ? resolveContextMenuSource(nativeEvent)
+      : undefined
+    const point = readClientPoint(nativeEvent)
+    const clientX = contextMenuSource === 'keyboard' ? undefined : point.clientX
+    const clientY = contextMenuSource === 'keyboard' ? undefined : point.clientY
     const hit = resolveShikitorInputHit({
       target,
       input,
@@ -492,9 +505,7 @@ export function inputBindingsControlled({
       shikitor,
       platform,
       hit,
-      nativeEvent.type === 'contextmenu'
-        ? resolveContextMenuSource(nativeEvent)
-        : undefined
+      contextMenuSource
     )
     const summary = service.dispatch(event)
     applyDispatchPolicy(nativeEvent, summary)

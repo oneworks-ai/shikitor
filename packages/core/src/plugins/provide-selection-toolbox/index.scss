@@ -8,8 +8,9 @@
   align-items: center;
   gap: var(--inner-padding);
 
+  box-sizing: border-box;
   padding: var(--inner-padding);
-  height: 20px;
+  height: calc(20px + var(--inner-padding) * 2);
 
   font-family: var(--font-family, monospace), serif;
   color: var(--shikitor-bg-color);
