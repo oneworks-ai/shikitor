@@ -6,16 +6,17 @@
 
 .chatroom {
   display: flex;
-  width: min(100%, 720px);
-  height: 430px;
+  flex: 1;
+  width: 100%;
+  min-height: 430px;
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(27, 31, 44, .14);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
   color: #272b38;
   background: #fff;
-  box-shadow: 0 18px 42px rgba(20, 24, 40, .14);
+  box-shadow: none;
 
   &[data-theme='dark'] {
     color: #e6edf3;
@@ -92,6 +93,7 @@
   }
 
   .message-text .s-md {
+    color: var(--composer-fg);
     font-size: 11px;
   }
 
@@ -141,21 +143,12 @@
 
   > .shikitor {
     flex: 1;
+    align-self: center;
     min-width: 0;
     min-height: 32px;
-    padding: 5px 0;
     background: var(--composer-bg) !important;
     font-size: 11px;
     --line-height: 20px;
-  }
-
-  > kbd {
-    position: absolute;
-    right: 49px;
-    bottom: 15px;
-    color: color-mix(in srgb, var(--composer-fg), transparent 55%);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 8px;
   }
 
   > .t-button {
@@ -165,10 +158,6 @@
 
 @media (max-width: 700px) {
   .chatroom {
-    height: 380px;
-  }
-
-  .message-sender > kbd {
-    display: none;
+    min-height: 380px;
   }
 }

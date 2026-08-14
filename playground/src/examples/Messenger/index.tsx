@@ -72,12 +72,10 @@ export default function Messenger() {
   const queries = useQueries<{
     'messenger.composer.theme': BundledTheme
     'messenger.composer.mentions': string
-    'messenger.composer.hint': string
     'messenger.composer.model': string
   }>()
   const theme = queries.value['messenger.composer.theme'] ?? 'github-light'
   const mentions = queries.value['messenger.composer.mentions'] !== 'false'
-  const showHint = queries.value['messenger.composer.hint'] !== 'false'
   const model = queries.value['messenger.composer.model'] ?? 'gpt-4o-mini'
   const isDark = theme.includes('dark')
   const shikitorCreate = useShikitorCreate()
@@ -135,6 +133,7 @@ export default function Messenger() {
     theme,
     language: 'markdown' as const,
     lineNumbers: 'off' as const,
+    highlightCurrentLine: false,
     placeholder: 'Write a message…',
     hideSelfCursorUsername: true,
     autoSize: { maxRows: 8 }
@@ -249,7 +248,7 @@ export default function Messenger() {
               )}
             </div>
             <div className='message-sender'>
-              <Avatar size='small'>YJ</Avatar>
+              <Avatar size='small'>Your</Avatar>
               <WithoutCoreEditor
                 ref={shikitorRef}
                 create={shikitorCreate}
@@ -265,7 +264,6 @@ export default function Messenger() {
                   }
                 }}
               />
-              {showHint && <kbd>⌘ Enter</kbd>}
               <Button
                 theme='primary'
                 shape='square'
@@ -297,13 +295,6 @@ export default function Messenger() {
             size='small'
             value={mentions}
             onChange={value => queries.set('messenger.composer.mentions', String(value))}
-          />
-        </SwitchField>
-        <SwitchField label={t('messenger.hint')} description={t('messenger.hintHelp')}>
-          <Switch
-            size='small'
-            value={showHint}
-            onChange={value => queries.set('messenger.composer.hint', String(value))}
           />
         </SwitchField>
         <ConfigField label={t('messenger.model')} description={t('messenger.modelHelp')}>

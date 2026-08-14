@@ -8,7 +8,9 @@ import {
   CodeIcon,
   Edit1Icon,
   LogoGithubIcon,
+  MoonIcon,
   MouseIcon,
+  SunnyIcon,
   TranslateIcon
 } from 'tdesign-icons-react'
 
@@ -47,6 +49,18 @@ interface ComponentGroup {
 }
 
 const components: ComponentGroup[] = [
+  {
+    labelKey: 'nav.patterns',
+    children: [
+      {
+        id: 'Messenger',
+        titleKey: 'nav.messenger',
+        descriptionKey: 'component.messenger.description',
+        icon: ChatIcon,
+        component: lazy(() => import('./examples/Messenger'))
+      }
+    ]
+  },
   {
     labelKey: 'nav.editors',
     children: [
@@ -91,38 +105,29 @@ const components: ComponentGroup[] = [
         component: lazy(() => import('./examples/MarkdownEditor'))
       }
     ]
-  },
-  {
-    labelKey: 'nav.patterns',
-    children: [
-      {
-        id: 'Messenger',
-        titleKey: 'nav.messenger',
-        descriptionKey: 'component.messenger.description',
-        icon: ChatIcon,
-        component: lazy(() => import('./examples/Messenger'))
-      }
-    ]
   }
 ]
 
 const componentItems = components.flatMap(group => group.children.flatMap(item => (
   'children' in item ? item.children : [item]
 )))
+const defaultComponent = componentItems.find(item => item.id === 'Messenger')!
 
 export default function App() {
   const { locale, setLocale, t } = useI18n()
   const {
     value: {
-      active = 'Code Editor'
+      active = 'Messenger',
+      theme = 'light'
     },
     set
   } = useQueries<{
     active: ComponentId
+    theme: 'dark' | 'light'
   }>()
   const activeItem = useMemo(() => {
     return componentItems.find(item => item.id === active || item.legacyIds?.includes(active))
-      ?? componentItems[0]
+      ?? defaultComponent
   }, [active])
   const ActiveComponent = activeItem.component
   const switchLocale = () => {
@@ -133,7 +138,7 @@ export default function App() {
   }
 
   return (
-    <div className='playground-shell'>
+    <div className='playground-shell' data-theme={theme}>
       <aside className='playground-sidebar'>
         <div className='playground-brand'>
           <div className='playground-brand__mark'>
@@ -230,9 +235,16 @@ export default function App() {
               <span>/</span> {t(activeItem.navTitleKey ?? activeItem.titleKey)}
             </div>
             <h1>{t(activeItem.titleKey)}</h1>
-            <p>{t(activeItem.descriptionKey)}</p>
           </div>
           <div className='playground-header__actions'>
+            <button
+              type='button'
+              className='playground-theme'
+              aria-label={t(theme === 'dark' ? 'header.switchLight' : 'header.switchDark')}
+              onClick={() => set('theme', theme === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <SunnyIcon /> : <MoonIcon />}
+            </button>
             <button
               type='button'
               className='playground-locale'

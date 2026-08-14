@@ -12,7 +12,10 @@ export default defineConfig({
     port: 31971
   },
   optimizeDeps: {
-    exclude: ['@shikitor/core']
+    // Shiki loads language grammars through generated dynamic imports. Keeping
+    // it out of Vite's dependency pre-bundle prevents HMR invalidation from
+    // leaving editors pointed at an obsolete hashed grammar chunk.
+    exclude: ['@shikitor/core', 'shiki']
   },
   build: {
     rollupOptions: {

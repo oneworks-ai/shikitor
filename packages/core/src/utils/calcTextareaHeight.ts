@@ -55,7 +55,18 @@ export function calcTextareaHeight(
   }
 
   hiddenTextarea.value = ''
-  const singleRowHeight = hiddenTextarea.scrollHeight - paddingSize
+  const measuredRowHeight = hiddenTextarea.scrollHeight - paddingSize
+  const computedLineHeight = Number.parseFloat(
+    window.getComputedStyle(targetElement).lineHeight
+  )
+  // React adapters may create the editor before its root is attached to the
+  // document. Browsers report a zero scrollHeight in that state, so keep the
+  // autosize contract (at least one row) using the resolved line height.
+  const singleRowHeight = measuredRowHeight > 0
+    ? measuredRowHeight
+    : Number.isFinite(computedLineHeight) && computedLineHeight > 0
+      ? computedLineHeight
+      : 22
   hiddenTextarea?.parentNode?.removeChild(hiddenTextarea)
   // @ts-ignore
   hiddenTextarea = null
@@ -70,7 +81,7 @@ export function calcTextareaHeight(
 
   if (!isNull(minRows)) {
     const minHeight = calcHeight(minRows)
-    height = Math.max(minHeight, height)
+    height = Math.max(minHeight, Number.isFinite(height) ? height : 0)
     result.minHeight = `${minHeight}px`
   }
   if (!isNull(maxRows)) {

@@ -123,6 +123,10 @@
   left: calc(var(--selection-start) - var(--shikitor-scroll-l, 0px));
   height: var(--line-height);
   background: rgba(124, 108, 242, .36);
+
+  &--visual {
+    right: auto;
+  }
 }
 
 .shikitor-fold-scrollbar {
