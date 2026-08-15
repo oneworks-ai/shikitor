@@ -1,4 +1,4 @@
-import type { ShikitorInputEvent } from '@shikitor/core'
+import type { InlineReplacement, ShikitorInputEvent, ShikitorOptions } from '@shikitor/core'
 import { definePlugin } from '@shikitor/core'
 
 export interface MessengerSessionLinksOptions {
@@ -7,6 +7,51 @@ export interface MessengerSessionLinksOptions {
 
 const linkClass = 'messenger-session-link'
 const activeLinkClass = 'messenger-session-link--active'
+type DecorationItem = NonNullable<ShikitorOptions['decorations']>[number]
+
+export interface MessengerSessionReference {
+  icon: string
+  roomId: string
+}
+
+export function getMessengerSessionLinkDecorations(
+  value: string,
+  references: Readonly<Record<string, MessengerSessionReference>>
+): DecorationItem[] {
+  return Array.from(value.matchAll(/#([\w-]+)/g)).flatMap(match => {
+    const reference = references[match[1]]
+    if (!reference || match.index === undefined) return []
+    return [{
+      start: match.index + 1,
+      end: match.index + match[0].length,
+      alwaysWrap: true,
+      properties: {
+        class: `${linkClass} ${linkClass}--text`,
+        'data-room': reference.roomId
+      }
+    }]
+  })
+}
+
+export function getMessengerSessionInlineReplacements(
+  value: string,
+  references: Readonly<Record<string, MessengerSessionReference>>
+): InlineReplacement[] {
+  return Array.from(value.matchAll(/#([\w-]+)/g)).flatMap(match => {
+    const reference = references[match[1]]
+    if (!reference || match.index === undefined) return []
+    return [{
+      start: match.index,
+      end: match.index + 1,
+      inlineSize: '1em',
+      properties: {
+        class: `${linkClass} ${linkClass}--marker`,
+        'data-room': reference.roomId,
+        'data-session-icon': reference.icon
+      }
+    }]
+  })
+}
 
 export function getMessengerSessionLink(event: ShikitorInputEvent) {
   if (event.hit.zone !== 'content' || !(event.hit.element instanceof Element)) return

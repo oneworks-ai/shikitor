@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { mountCompletionItemIcon } from '../../src/plugins/provide-completions'
+import {
+  mountCompletionItemIcon,
+  resolveCompletionInputKeyword
+} from '../../src/plugins/provide-completions'
 
 describe('completion item custom icons', () => {
   it('mounts an image or svg node returned by the consumer', () => {
@@ -20,5 +23,18 @@ describe('completion item custom icons', () => {
       throw new Error('broken consumer icon')
     })).toBe(false)
     expect(replaceChildren).not.toHaveBeenCalled()
+  })
+})
+
+describe('completion keyword synchronization', () => {
+  it('derives filtering text from the authoritative input value', () => {
+    expect(resolveCompletionInputKeyword('$m', 2, 1)).toBe('m')
+    expect(resolveCompletionInputKeyword('use $mem', 8, 5)).toBe('mem')
+  })
+
+  it('closes an active query when the caret or line leaves its trigger', () => {
+    expect(resolveCompletionInputKeyword('$mem', 0, 1)).toBeUndefined()
+    expect(resolveCompletionInputKeyword('$mem\nnext', 9, 1)).toBeUndefined()
+    expect(resolveCompletionInputKeyword('$mem', 8, 1)).toBeUndefined()
   })
 })

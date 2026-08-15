@@ -36,6 +36,7 @@ import bracketMatcher from '../../../../packages/core/src/plugins/bracket-matche
 import symmetryOperator from '../../../../packages/core/src/plugins/symmetry-operator'
 import demoCompletions from './plugins/demo-completions'
 import ghostText from './plugins/ghost-text'
+import InlineReplacementsCase from './components/InlineReplacementsCase'
 
 const noPlugins: InputShikitorPlugin[] = []
 
@@ -912,6 +913,8 @@ export default function CodeEditor() {
           </div>
         </div>
       </ComponentCase>
+
+      <InlineReplacementsCase theme={theme} />
 
     </div>
   )

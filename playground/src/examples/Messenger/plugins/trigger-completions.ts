@@ -1,7 +1,9 @@
 import { definePlugin } from '@shikitor/core'
-import type {} from '@shikitor/core/plugins/provide-completions'
-import type { CompletionItemIconRenderer } from '@shikitor/core/plugins/provide-completions'
 import { CompletionItemKind } from '@shikitor/core/plugins/provide-completions'
+
+type CompletionItemIconRenderer = import(
+  '@shikitor/core/plugins/provide-completions'
+).CompletionItemIconRenderer
 
 export type MessengerCompletionTrigger = '/' | '$' | '#' | '@'
 
@@ -21,6 +23,13 @@ export interface MessengerCompletionGroup {
 
 export interface TriggerCompletionsOptions {
   groups: MessengerCompletionGroup[]
+}
+
+export function resolveMessengerCompletionInsertText(
+  trigger: MessengerCompletionTrigger,
+  item: MessengerCompletionItem
+) {
+  return item.insertText ?? `${trigger}${item.label}`
 }
 
 /**
@@ -48,7 +57,7 @@ export default definePlugin({
                 start: triggerOffset,
                 end: triggerOffset
               },
-              insertText: `${group.trigger}${item.insertText ?? item.label}`
+              insertText: resolveMessengerCompletionInsertText(group.trigger, item)
             }))
           }
         }

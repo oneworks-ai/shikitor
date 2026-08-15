@@ -2,6 +2,8 @@ import './code-folding.scss'
 
 import { definePlugin } from '@shikitor/core'
 
+import { installCursorGeometryLayer } from './cursor-geometry-layer'
+
 export interface CodeFoldingOptions {
   /**
    * Collapse top-level foldable ranges when the plugin is mounted.
@@ -396,7 +398,6 @@ export default definePlugin({
     const scrollThumb = document.createElement('div')
     const horizontalScrollTrack = document.createElement('div')
     const horizontalScrollThumb = document.createElement('div')
-    const getCursorAbsolutePosition = shikitor._getCursorAbsolutePosition.bind(shikitor)
     const collapsed = new Set<number>()
     let ranges: FoldRange[] = []
     let initialized = false
@@ -504,7 +505,7 @@ export default definePlugin({
       }
 
       target.classList.add('shikitor--fold-collapsed')
-      const lineHeight = parseFloat(getComputedStyle(input).lineHeight) || 22
+      const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
       const viewportHeight = container.clientHeight
       const contentHeight = Math.max(
         visibleLines().length * lineHeight,
@@ -537,58 +538,61 @@ export default definePlugin({
     // Cursor geometry is normally based on the complete textarea value. Once
     // rows are folded, map that source geometry back onto the visible rows so
     // the caret remains beside the text the user can actually edit.
-    shikitor._getCursorAbsolutePosition = (cursor, lineOffset = 0) => {
-      const hiddenRange = ranges.find(range =>
-        collapsed.has(range.startLine)
-        && cursor.line > range.startLine
-        && cursor.line <= range.endLine
-      )
-      if (hiddenRange) {
-        const outputLine = output.querySelector<HTMLElement>(
-          `[data-line="${hiddenRange.startLine}"]`
+    const geometryLayer = installCursorGeometryLayer(
+      shikitor,
+      (getCursorAbsolutePosition, cursor, lineOffset) => {
+        const hiddenRange = ranges.find(range =>
+          collapsed.has(range.startLine)
+          && cursor.line > range.startLine
+          && cursor.line <= range.endLine
         )
-        if (outputLine) {
-          const geometry = visualGeometry(outputLine)
-          const exactBoundary = geometry.boundaries.find(boundary => boundary.offset === cursor.offset)
-          const placeholder = geometry.placeholders.find(element => {
-            const start = Number(element.dataset.foldSourceStart)
-            const end = Number(element.dataset.foldSourceEnd)
-            return cursor.offset >= start && cursor.offset <= end
-          })
-          const placeholderBoundary = placeholder && (() => {
-            const start = Number(placeholder.dataset.foldSourceStart)
-            const end = Number(placeholder.dataset.foldSourceEnd)
-            const rect = placeholder.getBoundingClientRect()
-            return cursor.offset - start <= end - cursor.offset ? rect.left : rect.right
-          })()
-          const x = exactBoundary?.x ?? placeholderBoundary
-          if (x !== undefined) {
-            const containerRect = container.getBoundingClientRect()
-            const lineRect = outputLine.getBoundingClientRect()
-            return {
-              x: x - containerRect.left + visualScrollLeft,
-              y: lineRect.bottom - containerRect.top + input.scrollTop + lineOffset * lineRect.height
+        if (hiddenRange) {
+          const outputLine = output.querySelector<HTMLElement>(
+            `[data-line="${hiddenRange.startLine}"]`
+          )
+          if (outputLine) {
+            const geometry = visualGeometry(outputLine)
+            const exactBoundary = geometry.boundaries.find(boundary => boundary.offset === cursor.offset)
+            const placeholder = geometry.placeholders.find(element => {
+              const start = Number(element.dataset.foldSourceStart)
+              const end = Number(element.dataset.foldSourceEnd)
+              return cursor.offset >= start && cursor.offset <= end
+            })
+            const placeholderBoundary = placeholder && (() => {
+              const start = Number(placeholder.dataset.foldSourceStart)
+              const end = Number(placeholder.dataset.foldSourceEnd)
+              const rect = placeholder.getBoundingClientRect()
+              return cursor.offset - start <= end - cursor.offset ? rect.left : rect.right
+            })()
+            const x = exactBoundary?.x ?? placeholderBoundary
+            if (x !== undefined) {
+              const containerRect = container.getBoundingClientRect()
+              const lineRect = outputLine.getBoundingClientRect()
+              return {
+                x: x - containerRect.left + visualScrollLeft,
+                y: lineRect.bottom - containerRect.top + input.scrollTop + lineOffset * lineRect.height
+              }
             }
           }
         }
-      }
-      const visualCursor = hiddenRange
-        ? shikitor.rawTextHelper.resolvePosition({
-            line: hiddenRange.startLine,
-            character: shikitor.rawTextHelper.line({
+        const visualCursor = hiddenRange
+          ? shikitor.rawTextHelper.resolvePosition({
               line: hiddenRange.startLine,
-              character: 0
-            }).length
-          })
-        : cursor
-      const position = getCursorAbsolutePosition(visualCursor, lineOffset)
-      const hiddenLinesBeforeCursor = visualCursor.line - visibleRow(visualCursor.line)
-      const lineHeight = parseFloat(getComputedStyle(input).lineHeight) || 22
-      return {
-        x: position.x,
-        y: position.y - hiddenLinesBeforeCursor * lineHeight
+              character: shikitor.rawTextHelper.line({
+                line: hiddenRange.startLine,
+                character: 0
+              }).length
+            })
+          : cursor
+        const position = getCursorAbsolutePosition(visualCursor, lineOffset)
+        const hiddenLinesBeforeCursor = visualCursor.line - visibleRow(visualCursor.line)
+        const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
+        return {
+          x: position.x,
+          y: position.y - hiddenLinesBeforeCursor * lineHeight
+        }
       }
-    }
+    )
 
     function applySelection(anchor: number, focus: number) {
       const start = Math.min(anchor, focus)
@@ -688,7 +692,7 @@ export default definePlugin({
     function pointerPosition(event: PointerEvent) {
       const lines = visibleLines()
       const rect = input.getBoundingClientRect()
-      const lineHeight = parseFloat(getComputedStyle(input).lineHeight) || 22
+      const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
       const visibleIndex = Math.min(
         lines.length - 1,
         Math.max(0, Math.floor((event.clientY - rect.top + input.scrollTop) / lineHeight))
@@ -939,7 +943,7 @@ export default definePlugin({
     input.addEventListener('scroll', onInputScroll)
     const normalizeWheelDelta = (event: WheelEvent, delta: number) => {
       if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-        return delta * (parseFloat(getComputedStyle(input).lineHeight) || 22)
+        return delta * (Number.parseFloat(getComputedStyle(input).lineHeight) || 22)
       }
       if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
         return delta * container.clientHeight
@@ -1487,7 +1491,7 @@ export default definePlugin({
       input.removeEventListener('select', onSelectionChange)
       input.removeEventListener('focus', onSelectionChange)
       input.removeEventListener('blur', onSelectionChange)
-      shikitor._getCursorAbsolutePosition = getCursorAbsolutePosition
+      geometryLayer.dispose()
       target.style.removeProperty('--shikitor-visual-scroll-l')
       target.classList.remove(
         'shikitor--code-folding',

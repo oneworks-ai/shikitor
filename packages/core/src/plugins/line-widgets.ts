@@ -2,6 +2,8 @@ import './line-widgets.scss'
 
 import { definePlugin } from '@shikitor/core'
 
+import { installCursorGeometryLayer } from './cursor-geometry-layer'
+
 export interface LineWidget {
   id: string
   /** One-based source line after which the region is inserted. */
@@ -26,7 +28,6 @@ export default definePlugin({
     const input = target.querySelector('.shikitor-input') as HTMLTextAreaElement
     const container = target.querySelector('.shikitor-container') as HTMLElement
     const selectionLayer = document.createElement('div')
-    const getCursorAbsolutePosition = shikitor._getCursorAbsolutePosition.bind(shikitor)
     let renderFrame: number | undefined
     let widgetDisposers: Array<() => void> = []
     let widgetObservers: ResizeObserver[] = []
@@ -42,18 +43,20 @@ export default definePlugin({
     }
 
     function sourceLineTop(line: number) {
-      const lineHeight = parseFloat(getComputedStyle(input).lineHeight) || 22
+      const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
       return (line - 1) * lineHeight + widgetHeightBeforeLine(line)
     }
 
-    const getLineWidgetCursorPosition = (cursor: Parameters<typeof getCursorAbsolutePosition>[0], lineOffset = 0) => {
-      const position = getCursorAbsolutePosition(cursor, lineOffset)
-      return {
-        x: position.x,
-        y: position.y + widgetHeightBeforeLine(cursor.line)
+    const geometryLayer = installCursorGeometryLayer(
+      shikitor,
+      (getCursorAbsolutePosition, cursor, lineOffset) => {
+        const position = getCursorAbsolutePosition(cursor, lineOffset)
+        return {
+          x: position.x,
+          y: position.y + widgetHeightBeforeLine(cursor.line)
+        }
       }
-    }
-    shikitor._getCursorAbsolutePosition = getLineWidgetCursorPosition
+    )
 
     function renderCursor() {
       const position = shikitor._getCursorAbsolutePosition(shikitor.cursor, -1)
@@ -75,7 +78,7 @@ export default definePlugin({
 
     function pointerPosition(event: PointerEvent) {
       const rect = input.getBoundingClientRect()
-      const lineHeight = parseFloat(getComputedStyle(input).lineHeight) || 22
+      const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
       const visualY = Math.max(0, event.clientY - rect.top + input.scrollTop)
       const lineCount = shikitor.value.split('\n').length
       let line = lineCount
@@ -308,9 +311,7 @@ export default definePlugin({
       input.removeEventListener('scroll', renderSelection)
       input.removeEventListener('focus', renderSelection)
       input.removeEventListener('blur', renderSelection)
-      if (shikitor._getCursorAbsolutePosition === getLineWidgetCursorPosition) {
-        shikitor._getCursorAbsolutePosition = getCursorAbsolutePosition
-      }
+      geometryLayer.dispose()
       clearWidgets()
       selectionLayer.remove()
       target.classList.remove('shikitor--line-widgets')

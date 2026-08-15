@@ -12,6 +12,23 @@ import type { Cursor, ResolvedCursor, ResolvedSelection, Selection } from './bas
 
 export * from './base'
 
+export interface InlineReplacement {
+  /** Source range that remains authoritative for editing and copy. */
+  start: DecorationItem['start']
+  end: DecorationItem['end']
+  /** Visual inline size of the replacement slot. @default 1em */
+  inlineSize?: string
+  /** Visual block size of the replacement slot. @default inlineSize */
+  blockSize?: string
+  /**
+   * Editing behavior for the source range. `mapped` preserves source-level
+   * caret stops; `atomic` exposes only the range boundaries. @default mapped
+   */
+  interaction?: 'atomic' | 'mapped'
+  /** HTML properties applied to the rendered replacement wrapper. */
+  properties?: DecorationItem['properties']
+}
+
 interface ShikitorEvents {
   onChange?: (value: string) => void
   onCursorChange?: (cursor?: ResolvedCursor) => void
@@ -59,6 +76,12 @@ export interface ShikitorOptions extends ShikitorEvents {
   readOnly?: boolean
   theme?: BundledTheme
   decorations?: DecorationItem[]
+  /**
+   * Replace source ranges visually without changing the textarea value.
+   * Pair this option with the inline-replacements plugin so caret and
+   * selection geometry follows the rendered slot instead of the raw glyph.
+   */
+  inlineReplacements?: InlineReplacement[]
   input?: {
     /**
      * Override the host platform used to resolve cross-platform input
