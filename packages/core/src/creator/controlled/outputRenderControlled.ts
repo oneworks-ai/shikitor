@@ -2,16 +2,15 @@ import type { DecorationItem } from '@shikijs/core'
 import { transformerRenderWhitespace } from '@shikijs/transformers'
 import { bundledThemesInfo, getHighlighter } from 'shiki'
 import { derive } from 'valtio/utils'
-import { snapshot } from 'valtio/vanilla'
 
 import type { RefObject } from '../../base'
 import { cssvar } from '../../base'
 import type { InlineReplacement, ResolvedCursor, ShikitorOptions } from '../../editor'
-import { classnames, isMultipleKey, isWhatBrowser } from '../../utils' with {
+import { isMultipleKey, isWhatBrowser } from '../../utils' with {
   'unbundled-reexport': 'on'
 }
 import { scoped } from '../../utils/valtio/scoped'
-import { HIGHLIGHTED } from '../classes'
+import { HIGHLIGHTED, OUTPUT_HIGHLIGHTED } from '../classes'
 import { shikitorStructureTransformer } from '../structureTransfomer'
 
 const darkThemes = new Set(
@@ -320,18 +319,30 @@ export function outputRenderControlled(
   function renderGutter(value: string) {
     const lineCounts = value.split('\n').length
     const gutterLinePrefix = `${'shikitor'}-gutter-line`
-    const cursorLine = cursorRef.current.line
-    const lineClass = (index: number) => {
-      const isCursor = !!cursorLine && cursorLine === index
-      return classnames(gutterLinePrefix, { [HIGHLIGHTED]: isCursor })
-    }
     lines.style.setProperty(cssvar('line-digit-count'), `${lineCounts.toString().length}ch`)
     lines.innerHTML = Array
       .from({ length: lineCounts })
-      .map((_, i) => (`<div class="${lineClass(i + 1)}" data-line="${i + 1}">
+      .map((_, i) => (`<div class="${gutterLinePrefix}" data-line="${i + 1}">
         <div class="${gutterLinePrefix}-number">${i + 1}</div>
       </div>`))
       .join('')
+  }
+
+  function syncCurrentLineHighlight() {
+    const cursorLine = cursorRef.current.line
+    const targets = [
+      [lines, HIGHLIGHTED],
+      [output, OUTPUT_HIGHLIGHTED]
+    ] as const
+    for (const [container, className] of targets) {
+      const oldLine = container.querySelector(`.${className}`)
+      const line = cursorLine
+        ? container.querySelector<HTMLElement>(`[data-line="${cursorLine}"]`)
+        : undefined
+      if (oldLine === line) continue
+      oldLine?.classList.remove(className)
+      line?.classList.add(className)
+    }
   }
   scopeWatch(get => {
     const {
@@ -375,6 +386,7 @@ export function outputRenderControlled(
     renderFallback({ value, theme }) {
       renderPlainText(value, theme)
       renderGutter(value)
+      syncCurrentLineHighlight()
     },
     async renderAsync({ value, theme, language, decorations, inlineReplacements }, isCurrent) {
       const highlighter = await getCachedHighlighter(theme, language)
@@ -399,6 +411,7 @@ export function outputRenderControlled(
       output.dataset.renderState = 'highlighted'
       output.style.removeProperty('color')
       output.style.removeProperty('background-color')
+      syncCurrentLineHighlight()
     },
     onError(error) {
       // The synchronous source view is already usable. Keep it mounted if an
@@ -420,17 +433,7 @@ export function outputRenderControlled(
     void renderer.render({ value, theme, language, decorations, inlineReplacements })
   })
   scopeSubscribe(cursorRef, () => {
-    const cursor = snapshot(cursorRef).current
-    if (cursor.line === undefined) return
-    const line = lines.querySelector(`[data-line="${cursor.line}"]`)
-    if (!line) return
-
-    const oldLine = lines.querySelector(`.${HIGHLIGHTED}`)
-    if (oldLine === line) return
-    if (oldLine) {
-      oldLine.classList.remove(HIGHLIGHTED)
-    }
-    line.classList.add(HIGHLIGHTED)
+    syncCurrentLineHighlight()
   })
   return () => {
     renderer.dispose()

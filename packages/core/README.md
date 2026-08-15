@@ -55,3 +55,45 @@ editing unit: pointer hits, caret movement, Shift selection, and deletion then
 stop only at the range boundaries. The default `mapped` interaction preserves
 source-level caret stops. `blockSize` can be set separately when a replacement
 is wider than it is tall.
+
+### Editable diffs
+
+The diff plugin keeps the editor `value` as the authoritative working copy and
+projects a separate `original` baseline into unified or split review rows.
+Deleted rows never enter the textarea, so normal typing, selection, clipboard,
+undo, syntax highlighting, and other Shikitor plugins continue to operate on
+the working copy.
+
+```ts
+import { create } from '@shikitor/core'
+import diffPlugin from '@shikitor/core/plugins/diff'
+import '@shikitor/core/plugins/diff.css'
+
+const editor = await create(document.querySelector('#editor')!, {
+  value: 'export const mode = "split"',
+  language: 'typescript',
+  plugins: [[diffPlugin, {
+    original: 'export const mode = "unified"',
+    view: 'split',
+    inline: 'word',
+    hunkActions: true,
+    collapseUnchanged: { context: 2, minimum: 6 }
+  }]]
+})
+
+const diff = editor.context.shikitorDiff
+diff.setView('unified')
+await diff.rejectHunk(diff.model.hunks[0].id)
+```
+
+`inline` accepts `word`, `character`, or `none`. The controller exposes the
+current model and statistics, `setOriginal()`, `setView()`, `acceptHunk()`,
+`rejectHunk()`, `acceptAll()`, and `rejectAll()`. Accepting updates the in-memory
+baseline; rejecting edits the working copy through Shikitor. Persistence to a
+file, Git index, or remote review system remains the host application's
+responsibility.
+
+Set `collapseUnchanged` to `true` or provide `{ context, minimum, label }` to
+replace long unchanged ranges with an expandable context row. The textarea
+still retains the complete working-copy source, while pointer, keyboard,
+selection, and scroll geometry follow the folded visual document.

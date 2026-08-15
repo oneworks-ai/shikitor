@@ -53,16 +53,13 @@
       font-family: var(--font-family, monospace), serif;
       overflow: hidden;
     }
-    &-highlighted::before {
-      z-index: 10;
-      position: absolute;
-      content: '';
-      left: 0;
-      width: 100%;
-      height: var(--line-height);
-      background-color: var(--shikitor-current-line-color, var(--shikitor-fg-color-op7));
-      pointer-events: none;
-    }
+  }
+  &-gutter-line-highlighted,
+  &-output-line-highlighted {
+    background-image: linear-gradient(
+      var(--shikitor-current-line-color, var(--shikitor-fg-color-op7)),
+      var(--shikitor-current-line-color, var(--shikitor-fg-color-op7))
+    );
   }
   &-container {
     position: relative;
@@ -210,8 +207,9 @@
     }
   }
   &.hide-current-line {
-    .shikitor-gutter-line-highlighted::before {
-      display: none;
+    .shikitor-gutter-line-highlighted,
+    .shikitor-output-line-highlighted {
+      background-image: none;
     }
   }
 }

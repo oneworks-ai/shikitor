@@ -1,4 +1,8 @@
 .shikitor--line-widgets {
+  .shikitor-input {
+    box-sizing: border-box;
+  }
+
   .shikitor-input::selection {
     background: transparent;
   }
