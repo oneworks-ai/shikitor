@@ -11,6 +11,7 @@ import { callUpdateDispatcher, completeAssign, listen } from '../utils' with {
   'unbundled-reexport': 'on'
 }
 import { calcTextareaHeight } from '../utils/calcTextareaHeight'
+import { resolveSelectionFocus } from '../utils/resolveSelectionFocus'
 import { scoped } from '../utils/valtio/scoped'
 import { cursorControlled } from './controlled/cursorControlled'
 import { inputBindingsControlled } from './controlled/inputBindingsControlled'
@@ -178,9 +179,11 @@ export async function create(
     const [start, end] = [input.selectionStart, input.selectionEnd]
     const selection = { start: resolvePosition(start), end: resolvePosition(end) }
     const [prevSelection] = selections
-    const pos = selection.start.offset !== prevSelection?.start.offset
-      ? selection.start
-      : selection.end
+    const pos = resolvePosition(resolveSelectionFocus(
+      start,
+      end,
+      input.selectionDirection
+    ))
     if (resolvePosition(optionsRef.current.cursor ?? 0).offset !== pos.offset) {
       optionsRef.current.cursor = resolvePosition(pos)
     }

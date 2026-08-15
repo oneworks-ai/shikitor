@@ -362,6 +362,7 @@ export default definePlugin({
   }
       const shikitor = ctx.shikitor
       const { optionsRef } = shikitor
+      const input = shikitor.element.querySelector('.shikitor-input') as HTMLTextAreaElement
       const cursorRef = derive({
         current: get => get(optionsRef).current.cursor
       })
@@ -369,6 +370,18 @@ export default definePlugin({
         current: get => get(optionsRef).current.language
       })
       const { disposeScoped: disposeProviderScope, scopeWatch } = scoped()
+      const syncKeywordFromInput = () => {
+        const triggerOffset = triggerCharacter.offset
+        if (triggerCharacter.current === undefined || triggerOffset === undefined) return
+        const keyword = resolveCompletionInputKeyword(
+          input.value,
+          input.selectionStart,
+          triggerOffset
+        )
+        if (keyword === undefined) closeCompletions()
+        else keywordRef.current = keyword
+      }
+      input.addEventListener('input', syncKeywordFromInput)
       ctx.provide('shikitorCompletions', {
         registerCompletionItemProvider(selector, provider) {
           let providerDispose: (() => void) | undefined
@@ -507,6 +520,7 @@ export default definePlugin({
       }
       })
       return () => {
+        input.removeEventListener('input', syncKeywordFromInput)
         popupProviderDisposable.dispose?.()
         disposeProviderScope()
         disposeScoped()
@@ -515,6 +529,20 @@ export default definePlugin({
 })
 
 const CalcExitError = Symbol('CalcExitError')
+export function resolveCompletionInputKeyword(
+  value: string,
+  cursorOffset: number,
+  triggerOffset: number
+) {
+  if (
+    triggerOffset < 0
+    || cursorOffset < triggerOffset
+    || cursorOffset > value.length
+  ) return undefined
+  const keyword = value.slice(triggerOffset, cursorOffset)
+  return /[\r\n]/.test(keyword) ? undefined : keyword
+}
+
 function calcNewKeyword(keyword: string, key: string, nextChar = '') {
   switch (key) {
     case 'ArrowRight':

@@ -2,6 +2,7 @@ import './index.scss'
 
 import MarkdownItPluginShiki from '@shikijs/markdown-it'
 import type { InputShikitorPlugin, Shikitor, ShikitorOptions } from '@shikitor/core'
+import inlineReplacements from '@shikitor/core/plugins/inline-replacements'
 import provideCompletions, { CompletionItemKind } from '@shikitor/core/plugins/provide-completions'
 import provideKeyboard from '@shikitor/core/plugins/provide-keyboard'
 import providePointer from '@shikitor/core/plugins/provide-pointer'
@@ -10,7 +11,8 @@ import provideSelectionToolbox from '@shikitor/core/plugins/provide-selection-to
 import selectionToolboxForMd from '@shikitor/core/plugins/selection-toolbox-for-md'
 import { WithoutCoreEditor } from '@shikitor/react'
 import MarkdownIt from 'markdown-it'
-import React, { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Avatar, Button } from 'tdesign-react'
 
 import { useQueries } from '../../hooks/useQueries'
@@ -19,23 +21,28 @@ import { useShikitorCreate } from '../../hooks/useShikitorCreate'
 import type { IMessage, IUser } from './components/Message'
 import { Message } from './components/Message'
 import { createReplyTimerRegistry } from './plugins/reply-timers'
-import sessionLinks from './plugins/session-links'
-import triggerCompletions, {
-  type MessengerCompletionGroup
-} from './plugins/trigger-completions'
+import {
+  getMessengerSkillInlineReplacements,
+  getMessengerSkillMarkdown
+} from './plugins/skill-links'
+import sessionLinks, {
+  getMessengerSessionInlineReplacements,
+  getMessengerSessionLinkDecorations
+} from './plugins/session-links'
+import type { MessengerCompletionGroup } from './plugins/trigger-completions'
+import triggerCompletions from './plugins/trigger-completions'
 
 type MessageItem = IMessage & {
   hidden?: boolean
   kind?: 'welcome' | 'demoReply'
   roomId?: ChatRoomId
 }
-type DecorationItem = NonNullable<ShikitorOptions['decorations']>[number]
 type CustomProperties = CSSProperties & Record<`--${string}`, string | number>
 
 const chatRoomIds = ['documentation', 'frontend-review', 'lsp-integration', 'release-prep'] as const
 type ChatRoomId = typeof chatRoomIds[number]
 
-type ChatRoomDefinition = {
+interface ChatRoomDefinition {
   id: ChatRoomId
   icon: string
   title: string
@@ -44,26 +51,25 @@ type ChatRoomDefinition = {
   unread?: number
 }
 
-const sessionRoomIds: Record<string, ChatRoomId> = {
-  'documentation': 'documentation',
-  'frontend-review': 'frontend-review',
-  'lsp-integration': 'lsp-integration',
-  'release-prep': 'release-prep'
+const sessionReferences = {
+  'documentation': { roomId: 'documentation', icon: 'description' },
+  'frontend-review': { roomId: 'frontend-review', icon: 'preview' },
+  'lsp-integration': { roomId: 'lsp-integration', icon: 'data_object' },
+  'release-prep': { roomId: 'release-prep', icon: 'rocket_launch' }
+} as const satisfies Record<string, { roomId: ChatRoomId, icon: string }>
+
+const skillReferences = {
+  mem: { title: '$mem', href: 'skill://mem', icon: 'memory' },
+  browser: { title: '$browser', href: 'skill://browser', icon: 'language' },
+  'openai-docs': { title: '$openai-docs', href: 'skill://openai-docs', icon: 'description' }
+} as const
+
+function getSessionLinkDecorations(value: string) {
+  return getMessengerSessionLinkDecorations(value, sessionReferences)
 }
 
-function getSessionLinkDecorations(value: string): DecorationItem[] {
-  return Array.from(value.matchAll(/#([\w-]+)/g)).flatMap(match => {
-    const roomId = sessionRoomIds[match[1]]
-    if (!roomId || match.index === undefined) return []
-    return [{
-      start: match.index,
-      end: match.index + match[0].length,
-      properties: {
-        class: 'messenger-session-link',
-        'data-room': roomId
-      }
-    }]
-  })
+function getSessionInlineReplacements(value: string) {
+  return getMessengerSessionInlineReplacements(value, sessionReferences)
 }
 
 const currentUser = {
@@ -124,13 +130,20 @@ function svgCompletionIcon(path: string) {
   }
 }
 
+function materialSymbolCompletionIcon(icon: string) {
+  return () => {
+    const symbol = document.createElement('span')
+    symbol.className = 'messenger-skill-completion-icon'
+    symbol.dataset.skillIcon = icon
+    symbol.setAttribute('aria-hidden', 'true')
+    return symbol
+  }
+}
+
 const completionIcons = {
   clear: svgCompletionIcon('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5'),
   goal: svgCompletionIcon('M12 3a9 9 0 1 0 9 9M12 7a5 5 0 1 0 5 5M12 10a2 2 0 1 0 2 2M15 9l6-6M21 3v5M21 3h-5'),
   help: svgCompletionIcon('M9.5 9a2.5 2.5 0 1 1 4.4 1.6c-.8.8-1.9 1.2-1.9 2.4M12 17h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0'),
-  memory: svgCompletionIcon('M8 4h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3M9 8h6M9 12h6M9 16h3'),
-  browser: svgCompletionIcon('M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M3 12h18M12 3c2 2.5 3 5.5 3 9s-1 6.5-3 9M12 3c-2 2.5-3 5.5-3 9s1 6.5 3 9'),
-  docs: svgCompletionIcon('M7 3h7l4 4v14H7zM14 3v5h4M10 12h5M10 16h5'),
   review: svgCompletionIcon('M4 5h16v11H4zM8 20h8M12 16v4M8 10l2.5 2.5L16 7'),
   integration: svgCompletionIcon('M8 8 4 12l4 4M16 8l4 4-4 4M14 5l-4 14'),
   release: svgCompletionIcon('M14 4c3-1 5-1 6-1 0 1 0 3-1 6l-5 5-4-4zM10 8 6 7 3 10l5 2M12 14l2 5-3 3-1-4M7 17c-2 0-3 1-3 3 2 0 3-1 3-3')
@@ -160,14 +173,14 @@ export default function Messenger() {
     return [
       {
         id: 'documentation',
-        icon: 'description',
+        icon: sessionReferences.documentation.icon,
         title: translate('messenger.room'),
         status: translate('messenger.online'),
         welcome: welcomeMessage
       },
       {
         id: 'frontend-review',
-        icon: 'preview',
+        icon: sessionReferences['frontend-review'].icon,
         title: translate('messenger.room.frontendReview'),
         status: translate('messenger.room.frontendReviewStatus'),
         welcome: translate('messenger.room.frontendReviewWelcome'),
@@ -175,14 +188,14 @@ export default function Messenger() {
       },
       {
         id: 'lsp-integration',
-        icon: 'data_object',
+        icon: sessionReferences['lsp-integration'].icon,
         title: translate('messenger.room.lspIntegration'),
         status: translate('messenger.room.lspIntegrationStatus'),
         welcome: translate('messenger.room.lspIntegrationWelcome')
       },
       {
         id: 'release-prep',
-        icon: 'rocket_launch',
+        icon: sessionReferences['release-prep'].icon,
         title: translate('messenger.room.releasePrep'),
         status: translate('messenger.room.releasePrepStatus'),
         welcome: translate('messenger.room.releasePrepWelcome'),
@@ -225,22 +238,25 @@ export default function Messenger() {
         items: [
           {
             label: 'mem',
+            insertText: getMessengerSkillMarkdown(skillReferences.mem),
             kind: CompletionItemKind.Module,
-            renderIcon: completionIcons.memory,
+            renderIcon: materialSymbolCompletionIcon(skillReferences.mem.icon),
             detail: translate('messenger.completion.skill'),
             documentation: translate('messenger.skill.mem')
           },
           {
             label: 'browser',
+            insertText: getMessengerSkillMarkdown(skillReferences.browser),
             kind: CompletionItemKind.Module,
-            renderIcon: completionIcons.browser,
+            renderIcon: materialSymbolCompletionIcon(skillReferences.browser.icon),
             detail: translate('messenger.completion.skill'),
             documentation: translate('messenger.skill.browser')
           },
           {
             label: 'openai-docs',
+            insertText: getMessengerSkillMarkdown(skillReferences['openai-docs']),
             kind: CompletionItemKind.Module,
-            renderIcon: completionIcons.docs,
+            renderIcon: materialSymbolCompletionIcon(skillReferences['openai-docs'].icon),
             detail: translate('messenger.completion.skill'),
             documentation: translate('messenger.skill.openaiDocs')
           }
@@ -318,9 +334,17 @@ export default function Messenger() {
   const activeRoom = rooms.find(room => room.id === activeRoomId) ?? rooms[0]
   const messages = roomMessages[activeRoomId]
   const text = roomDrafts[activeRoomId]
-  const sessionLinkKey = getSessionLinkDecorations(text)
-    .map(decoration => `${decoration.start}:${decoration.end}`)
-    .join('|')
+  const composerDecorations = [
+    ...getSessionLinkDecorations(text)
+  ]
+  const composerInlineReplacements = [
+    ...getSessionInlineReplacements(text),
+    ...getMessengerSkillInlineReplacements(text, skillReferences)
+  ]
+  const composerVisualKey = JSON.stringify([
+    composerDecorations,
+    composerInlineReplacements
+  ])
   const [composerColors, setComposerColors] = useState(() => isDark
     ? { bg: '#0d1117', fg: '#e6edf3' }
     : { bg: '#fff', fg: '#24292f' })
@@ -381,6 +405,7 @@ export default function Messenger() {
 
   const composerPlugins = useMemo(() => {
     return [
+      inlineReplacements,
       providePointer,
       provideKeyboard,
       providePopup,
@@ -393,7 +418,7 @@ export default function Messenger() {
       }],
       [sessionLinks, {
         onNavigate(roomId: string) {
-          const targetRoomId = sessionRoomIds[roomId]
+          const targetRoomId = sessionReferences[roomId as keyof typeof sessionReferences]?.roomId
           if (targetRoomId) setActiveRoomId(targetRoomId)
         }
       }],
@@ -409,11 +434,12 @@ export default function Messenger() {
     highlightCurrentLine: false,
     placeholder: composerPlaceholder,
     hideSelfCursorUsername: true,
-    decorations: getSessionLinkDecorations(text),
+    decorations: composerDecorations,
+    inlineReplacements: composerInlineReplacements,
     autoSize: { maxRows: 8 }
   // Updating editor options for every keystroke races the completion popup.
-  // Only refresh decorations when a complete, recognized room link changes.
-  }), [composerPlaceholder, sessionLinkKey, theme])
+  // Only refresh decorations when a complete, recognized visual reference changes.
+  }), [composerPlaceholder, composerVisualKey, theme])
 
   const setText = (value: string) => {
     setRoomDrafts(current => ({ ...current, [activeRoomId]: value }))

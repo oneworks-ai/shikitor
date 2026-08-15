@@ -6,6 +6,22 @@
   overflow: hidden;
 }
 
+.messenger-skill-completion-icon {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-size: 16px;
+  font-variation-settings: 'FILL' 1, 'GRAD' 1;
+  font-weight: 400;
+  line-height: 1;
+
+  &::before {
+    content: attr(data-skill-icon);
+  }
+}
+
 .chatroom-list {
   display: flex;
   flex: 0 0 184px;
@@ -265,21 +281,85 @@
   }
 
   .messenger-session-link {
-    color: #2563eb !important;
+    --messenger-session-link-color: #2563eb;
+
+    color: var(--messenger-session-link-color) !important;
     text-decoration: none;
     text-decoration-thickness: 1px;
     text-underline-offset: 2px;
     cursor: text;
+
+    &--marker::after {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--messenger-session-link-color);
+      content: attr(data-session-icon);
+      font-family: 'Material Symbols Outlined', sans-serif;
+      font-size: 1em;
+      font-variation-settings: 'FILL' 1, 'GRAD' 1;
+      font-weight: 400;
+      line-height: 1;
+      pointer-events: none;
+    }
   }
 
   .messenger-session-link--active {
     text-decoration: underline;
     cursor: pointer;
   }
+
+  .messenger-session-link--marker.messenger-session-link--active
+    + .messenger-session-link--text {
+    text-decoration: underline;
+  }
+
+  .messenger-skill-link--atomic {
+    --messenger-skill-link-color: #2563eb;
+
+    &::before,
+    &::after {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      color: var(--messenger-skill-link-color);
+      pointer-events: none;
+    }
+
+    &::before {
+      left: 0;
+      display: grid;
+      width: 1em;
+      place-items: center;
+      content: attr(data-skill-icon);
+      font-family: 'Material Symbols Outlined', sans-serif;
+      font-size: 1em;
+      font-variation-settings: 'FILL' 1, 'GRAD' 1;
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    &::after {
+      right: 0;
+      left: 1em;
+      display: flex;
+      align-items: center;
+      content: attr(data-skill-title);
+      font: inherit;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+  }
 }
 
 .messenger-examples[data-theme='dark'] .message-sender .messenger-session-link {
-  color: #8ab4ff !important;
+  --messenger-session-link-color: #8ab4ff;
+}
+
+.messenger-examples[data-theme='dark'] .message-sender .messenger-skill-link--atomic {
+  --messenger-skill-link-color: #8ab4ff;
 }
 
 @media (max-width: 700px) {

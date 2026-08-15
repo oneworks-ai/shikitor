@@ -6,7 +6,7 @@ import { snapshot } from 'valtio/vanilla'
 
 import type { RefObject } from '../../base'
 import { cssvar } from '../../base'
-import type { ResolvedCursor, ShikitorOptions } from '../../editor'
+import type { InlineReplacement, ResolvedCursor, ShikitorOptions } from '../../editor'
 import { classnames, isMultipleKey, isWhatBrowser } from '../../utils' with {
   'unbundled-reexport': 'on'
 }
@@ -79,6 +79,54 @@ export function normalizeDecorations(
     }
   }
   return normalized.length ? normalized : undefined
+}
+
+export function normalizeInlineReplacementDecorations(
+  value: string,
+  replacements?: InlineReplacement[]
+): DecorationItem[] | undefined {
+  if (!replacements?.length) return undefined
+
+  const decorations = replacements.map((replacement, index) => {
+    const className = [
+      replacement.properties?.class,
+      'shikitor-inline-replacement'
+    ].filter(Boolean).join(' ')
+    const style = [
+      replacement.properties?.style,
+      `--shikitor-inline-replacement-size:${replacement.inlineSize ?? '1em'}`,
+      replacement.blockSize
+        ? `--shikitor-inline-replacement-block-size:${replacement.blockSize}`
+        : undefined
+    ].filter(Boolean).join(';')
+    return {
+      start: replacement.start,
+      end: replacement.end,
+      alwaysWrap: true,
+      properties: {
+        ...replacement.properties,
+        class: className,
+        style,
+        'data-shikitor-inline-replacement': String(index),
+        ...(replacement.interaction === 'atomic'
+          ? { 'data-shikitor-inline-replacement-interaction': 'atomic' }
+          : {})
+      }
+    } satisfies DecorationItem
+  })
+  const normalized = normalizeDecorations(value, decorations)
+  return normalized?.map(decoration => ({
+    ...decoration,
+    properties: {
+      ...decoration.properties,
+      'data-shikitor-source-start': String(decoration.start),
+      'data-shikitor-source-end': String(decoration.end),
+      'data-shikitor-source-text': value.slice(
+        decoration.start as number,
+        decoration.end as number
+      )
+    }
+  }))
 }
 
 interface LatestRenderHandlers<Input, Output> {
@@ -313,28 +361,33 @@ export function outputRenderControlled(
     theme: get => get(optionsRef).current.theme,
     language: get => get(optionsRef).current.language,
     // TODO remove decorations
-    decorations: get => get(optionsRef).current.decorations
+    decorations: get => get(optionsRef).current.decorations,
+    inlineReplacements: get => get(optionsRef).current.inlineReplacements
   })
-  type RenderInput = {
+  interface RenderInput {
     value: string
     theme: string
     language: string
     decorations?: DecorationItem[]
+    inlineReplacements?: InlineReplacement[]
   }
   const renderer = createLatestRenderController<RenderInput, string>({
     renderFallback({ value, theme }) {
       renderPlainText(value, theme)
       renderGutter(value)
     },
-    async renderAsync({ value, theme, language, decorations }, isCurrent) {
+    async renderAsync({ value, theme, language, decorations, inlineReplacements }, isCurrent) {
       const highlighter = await getCachedHighlighter(theme, language)
       // Do not let an obsolete theme/language request mutate target theme
       // variables through the structure transformer.
       if (!isCurrent()) return
       return highlighter.codeToHtml(value, {
         lang: language,
-        theme: theme,
-        decorations: normalizeDecorations(value, decorations),
+        theme,
+        decorations: [
+          ...(normalizeDecorations(value, decorations) ?? []),
+          ...(normalizeInlineReplacementDecorations(value, inlineReplacements) ?? [])
+        ],
         transformers: [
           shikitorStructureTransformer(target),
           transformerRenderWhitespace()
@@ -360,10 +413,11 @@ export function outputRenderControlled(
     const {
       theme = 'github-light',
       language = 'javascript',
-      decorations
+      decorations,
+      inlineReplacements
     } = get(outputRenderDeps)
     if (value === undefined) return
-    void renderer.render({ value, theme, language, decorations })
+    void renderer.render({ value, theme, language, decorations, inlineReplacements })
   })
   scopeSubscribe(cursorRef, () => {
     const cursor = snapshot(cursorRef).current

@@ -66,6 +66,43 @@
   user-select: none;
 }
 
+.editor-frame--inline-replacement .demo-inline-reference {
+  --demo-inline-reference-color: #7c6cf2;
+
+  &::before,
+  &::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    color: var(--demo-inline-reference-color);
+    pointer-events: none;
+  }
+
+  &::before {
+    left: 0;
+    display: grid;
+    width: 1em;
+    place-items: center;
+    content: attr(data-reference-icon);
+    font-family: 'Material Symbols Outlined', sans-serif;
+    font-size: 1em;
+    font-variation-settings: 'FILL' 1, 'GRAD' 1;
+    font-weight: 400;
+    line-height: 1;
+  }
+
+  &::after {
+    right: 0;
+    left: 1em;
+    display: flex;
+    align-items: center;
+    content: attr(data-reference-title);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
 .case-tip {
   display: flex;
   align-items: flex-start;
@@ -84,6 +121,12 @@
     color: var(--pg-accent);
     font-size: 15px;
   }
+}
+
+.case-tip--inline-replacement {
+  border-color: var(--pg-border);
+  color: var(--pg-text-secondary);
+  background: var(--pg-accent-soft);
 }
 
 .case-tip--render-probe {
