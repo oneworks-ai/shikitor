@@ -8,6 +8,7 @@ import providePointer from '@shikitor/core/plugins/provide-pointer'
 import { WithoutCoreEditor } from '@shikitor/react/WithoutCoreEditor'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { useQueries } from '../../../hooks/useQueries'
 import { useShikitorCreate } from '../../../hooks/useShikitorCreate'
 import { useI18n } from '../../../i18n'
 import type { LanguageDefinition, LanguageServiceSnapshot } from './client'
@@ -40,6 +41,8 @@ const emptySnapshot: LanguageServiceSnapshot = {
 export default function TypeScriptLanguageServiceDemo() {
   const { t } = useI18n()
   const shikitorCreate = useShikitorCreate()
+  const queries = useQueries<{ theme: 'dark' | 'light' }>()
+  const editorTheme = queries.value.theme === 'dark' ? 'github-dark' as const : 'github-light' as const
   const [code, setCode] = useState(initialCode)
   const [snapshot, setSnapshot] = useState(emptySnapshot)
   const [ready, setReady] = useState(false)
@@ -51,10 +54,10 @@ export default function TypeScriptLanguageServiceDemo() {
   const hoverAriaLabel = t('lsp.hover.ariaLabel')
   const editorOptions = useMemo(() => ({
     language: 'typescript' as const,
-    theme: 'github-dark' as const,
+    theme: editorTheme,
     lineNumbers: 'on' as const,
     hideSelfCursorUsername: true
-  }), [])
+  }), [editorTheme])
   const plugins = useMemo(() => [
     providePointer,
     providePopup,

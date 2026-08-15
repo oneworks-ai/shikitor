@@ -241,14 +241,16 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
   const { t } = useI18n()
   const queries = useQueries<Record<string, string>>()
   const query = queries.value
+  const colorMode = query.theme === 'dark' ? 'dark' : 'light'
   const create = useShikitorCreate()
   const runtime = useMemo(() => createInputEventsRuntime(), [])
   const snapshot = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot, runtime.getSnapshot)
   const [value, setValue] = useState(sampleCode)
   const [contextMenuAction, setContextMenuAction] = useState<string>()
   const [editorColors, setEditorColors] = useState({
-    bg: query.theme === 'light' ? '#fff' : '#0d1117',
-    fg: query.theme === 'light' ? '#24292f' : '#e6edf3'
+    bg: colorMode === 'light' ? '#fff' : '#0d1117',
+    fg: colorMode === 'light' ? '#24292f' : '#e6edf3',
+    mode: colorMode
   })
   const [paused, setPaused] = useState(false)
   const [pausedTrace, setPausedTrace] = useState<readonly InputEventsTraceEntry[]>([])
@@ -326,13 +328,13 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
   ], [contextMenuEnabled, contextMenuItems, contextMenuKeyboard, kind, runtime, t])
   const options = useMemo(() => ({
     language: 'typescript' as const,
-    theme: query.theme === 'light' ? 'github-light' as const : 'github-dark' as const,
+    theme: colorMode === 'light' ? 'github-light' as const : 'github-dark' as const,
     lineNumbers: 'on' as const,
     hideSelfCursorUsername: true,
     input: kind === 'platform' && previewPlatform !== 'auto'
       ? { platform: previewPlatform }
       : undefined
-  }), [kind, previewPlatform, query.theme])
+  }), [colorMode, kind, previewPlatform])
   const editorRef = useRef<Shikitor>()
   const ariaKeyShortcuts = useMemo(() => snapshot.bindings
     .filter(binding => binding.enabled)
@@ -433,7 +435,7 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
       options={options}
       plugins={plugins}
       onMounted={handleMounted}
-      onColorChange={setEditorColors}
+      onColorChange={colors => setEditorColors({ ...colors, mode: colorMode })}
     />
   )
 
@@ -455,8 +457,12 @@ function InputEventCase({ kind }: { kind: CaseKind }) {
         <div
           className='input-events-preview'
           style={{
-            '--editor-bg': editorColors.bg || (query.theme === 'light' ? '#fff' : '#0d1117'),
-            '--editor-fg': editorColors.fg || (query.theme === 'light' ? '#24292f' : '#e6edf3')
+            '--editor-bg': editorColors.mode === colorMode && editorColors.bg
+              ? editorColors.bg
+              : colorMode === 'light' ? '#fff' : '#0d1117',
+            '--editor-fg': editorColors.mode === colorMode && editorColors.fg
+              ? editorColors.fg
+              : colorMode === 'light' ? '#24292f' : '#e6edf3'
           } as React.CSSProperties & Record<`--${string}`, string>}
         >
           <TracePanel

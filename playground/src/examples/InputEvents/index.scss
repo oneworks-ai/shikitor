@@ -57,24 +57,24 @@
   align-items: center;
   max-width: calc(100% - 24px);
   padding: 7px 9px;
-  color: #d8d2ff;
+  color: var(--pg-text);
   font-size: 10px;
-  background: rgb(69 58 133 / 94%);
-  border: 1px solid rgb(159 140 255 / 35%);
+  background: color-mix(in srgb, var(--pg-accent) 16%, var(--pg-surface));
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 38%, var(--pg-border));
   border-radius: 8px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
 
   span:last-child {
-    color: #bbb1e6;
+    color: var(--pg-text-secondary);
   }
 }
 
 .input-events-trace {
   position: relative;
   min-width: 0;
-  border-top: 1px solid rgba(255, 255, 255, .09);
-  color: #cdd5df;
-  background: #1c2128;
+  border-top: 1px solid var(--pg-border);
+  color: var(--pg-text-secondary);
+  background: var(--pg-surface);
 
   > header {
     display: flex;
@@ -82,8 +82,9 @@
     align-items: center;
     justify-content: space-between;
     padding: 0 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, .08);
-    color: #9da7b5;
+    border-bottom: 1px solid var(--pg-border-soft);
+    color: var(--pg-text-tertiary);
+    background: var(--pg-surface-muted);
     font-size: 10px;
     text-transform: uppercase;
 
@@ -99,7 +100,7 @@
   display: flex;
   gap: 2px;
 
-  .t-button { color: #c7d0dc; }
+  .t-button { color: var(--pg-text-secondary); }
 }
 
 .input-events-trace__list {
@@ -116,7 +117,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #768293;
+  color: var(--pg-text-tertiary);
   font-size: 11px;
 }
 
@@ -127,18 +128,18 @@
   grid-template-columns: 92px minmax(0, 1fr) auto;
   gap: 8px;
   padding: 5px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, .055);
+  border-bottom: 1px solid var(--pg-border-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
 
-  strong { overflow: hidden; color: #d8dee9; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-  small { color: #758194; }
-  em { grid-column: 2 / -1; color: #9f8cff; font-style: normal; }
-  &.is-handled { box-shadow: inset 2px 0 #7c6cf2; }
+  strong { overflow: hidden; color: var(--pg-text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  small { color: var(--pg-text-tertiary); }
+  em { grid-column: 2 / -1; color: var(--pg-accent); font-style: normal; }
+  &.is-handled { box-shadow: inset 2px 0 var(--pg-accent); }
 }
 
 .input-events-trace__type {
-  color: #8ebfff;
+  color: var(--pg-accent);
 }
 
 .input-events-binding-list {
