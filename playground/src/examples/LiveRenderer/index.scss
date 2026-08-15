@@ -115,9 +115,9 @@
     gap: 12px;
     min-height: 48px;
     padding: 0 15px;
-    border-bottom: 1px solid rgba(255, 255, 255, .1);
-    color: #dce1e8;
-    background: #24292f;
+    border-bottom: 1px solid var(--pg-border-soft);
+    color: var(--pg-text);
+    background: var(--pg-surface-muted);
 
     > span,
     > small {
@@ -132,7 +132,7 @@
     }
 
     > small {
-      color: #929ba6;
+      color: var(--pg-text-tertiary);
       font-size: 9px;
 
       i {
@@ -145,13 +145,13 @@
 
       b {
         padding-left: 7px;
-        border-left: 1px solid rgba(255, 255, 255, .13);
+        border-left: 1px solid var(--pg-border);
         font-weight: 500;
       }
     }
 
     .shikitor-icon {
-      color: #9c91ff;
+      color: var(--pg-accent);
       font-size: 16px;
       font-style: normal;
     }

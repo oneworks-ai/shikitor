@@ -129,7 +129,7 @@
 
 .ts-lsp-editor-column {
   min-width: 0;
-  background: #24292f;
+  background: var(--pg-surface-muted);
 }
 
 .ts-lsp-editor-toolbar {
@@ -138,20 +138,20 @@
   justify-content: space-between;
   height: 42px;
   padding: 0 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, .1);
-  color: #929ba6;
+  border-bottom: 1px solid var(--pg-border-soft);
+  color: var(--pg-text-tertiary);
   font-size: 10px;
 
   > span:first-child {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: #d7dce2;
+    color: var(--pg-text);
     font-weight: 650;
   }
 
   .shikitor-icon {
-    color: #8b7ff1;
+    color: var(--pg-accent);
     font-size: 15px;
     font-style: normal;
   }
@@ -168,8 +168,8 @@
   gap: 7px;
   min-height: 48px;
   padding: 10px 14px;
-  border-top: 1px solid rgba(255, 255, 255, .1);
-  color: #aab2bd;
+  border-top: 1px solid var(--pg-border-soft);
+  color: var(--pg-text-secondary);
   font-size: 10px;
   line-height: 1.45;
 
