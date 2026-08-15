@@ -1,0 +1,141 @@
+.diff-editor-demo {
+  display: flex;
+  width: 100%;
+  min-height: calc(100vh - 118px);
+  flex-direction: column;
+  gap: 10px;
+}
+
+.diff-editor-workbench {
+  display: flex;
+  min-height: 620px;
+  overflow: hidden;
+  flex: 1;
+  flex-direction: column;
+  border: 1px solid var(--pg-border);
+  border-radius: 14px;
+  background: var(--pg-surface);
+}
+
+.diff-editor-toolbar {
+  display: flex;
+  min-height: 50px;
+  padding: 7px 10px 7px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--pg-border);
+  background: var(--pg-surface-muted);
+}
+
+.diff-editor-file,
+.diff-editor-actions,
+.diff-editor-stats,
+.diff-editor-actions > button,
+.diff-editor-view {
+  display: inline-flex;
+  align-items: center;
+}
+
+.diff-editor-file {
+  min-width: 0;
+  gap: 7px;
+  color: var(--pg-text);
+  font-size: 11px;
+
+  > .shikitor-icon {
+    color: var(--pg-accent);
+    font-size: 16px;
+  }
+}
+
+.diff-editor-stats {
+  gap: 7px;
+  margin-left: 5px;
+  color: var(--pg-text-tertiary);
+  font-size: 9px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  b,
+  i {
+    font-style: normal;
+    font-weight: 650;
+  }
+
+  b { color: #2a9d55; }
+  i { color: #d6535d; }
+}
+
+.diff-editor-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+
+  button {
+    height: 28px;
+    padding: 0 9px;
+    border: 1px solid var(--pg-border);
+    border-radius: 6px;
+    color: var(--pg-text-secondary);
+    background: var(--pg-control);
+    cursor: pointer;
+    font: inherit;
+    font-size: 9px;
+    font-weight: 650;
+
+    &:hover,
+    &[aria-pressed='true'] {
+      border-color: var(--pg-accent);
+      color: var(--pg-accent);
+      background: var(--pg-accent-soft);
+    }
+  }
+
+  > button {
+    justify-content: center;
+    gap: 5px;
+
+    .shikitor-icon { font-size: 14px; }
+  }
+}
+
+.diff-editor-view {
+  overflow: hidden;
+  border: 1px solid var(--pg-border);
+  border-radius: 7px;
+
+  button {
+    border: 0;
+    border-radius: 0;
+
+    + button { border-left: 1px solid var(--pg-border); }
+  }
+}
+
+.diff-editor-workbench > .shikitor {
+  min-height: 0;
+  flex: 1;
+  border-radius: 0;
+  font-size: 12px;
+  --line-height: 22px;
+}
+
+@media (max-width: 900px) {
+  .diff-editor-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .diff-editor-actions {
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .diff-editor-stats > span { display: none; }
+
+  .diff-editor-actions > button {
+    padding-inline: 7px;
+  }
+}

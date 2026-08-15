@@ -15,17 +15,23 @@
   }
 
   .shikitor-gutter-line {
-    display: grid;
-    grid-template-columns: 20px auto;
+    align-items: center;
 
     &[hidden] {
       display: none;
     }
   }
 
-  .shikitor-gutter-line-number {
-    grid-row: 1;
-    grid-column: 2;
+  .shikitor-gutter-line[data-fold-presentation='line'],
+  .shikitor-output-line[data-fold-presentation='line'] {
+    background: var(--shikitor-fg-color-op9, rgba(127, 127, 127, .08));
+    cursor: pointer;
+  }
+
+  .shikitor-gutter-line[data-fold-presentation='line'] {
+    .shikitor-gutter-line-number {
+      visibility: hidden;
+    }
   }
 }
 
@@ -49,8 +55,7 @@
   display: grid;
   position: relative;
   z-index: 12;
-  grid-row: 1;
-  grid-column: 1;
+  flex: 0 0 16px;
   align-self: center;
   place-items: center;
   width: 16px;
@@ -99,6 +104,23 @@
     color: var(--shikitor-fg-color, currentColor);
     background: var(--shikitor-fg-color-op7, rgba(127, 127, 127, .28));
   }
+}
+
+.shikitor-fold-line-content {
+  display: none;
+}
+
+.shikitor-fold-placeholder--line {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--line-height);
+  margin: 0;
+  padding: 0 10px;
+  align-items: center;
+  border-radius: 0;
+  background: transparent;
+  font-style: normal;
 }
 
 .shikitor-fold-suffix {

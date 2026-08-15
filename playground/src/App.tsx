@@ -30,6 +30,7 @@ type ComponentId =
   | 'code-editor-ux'
   | 'code-editor-live-renderer'
   | 'code-editor-input-events'
+  | 'code-editor-diff'
   | 'code-editor-typescript-lsp'
   | 'Markdown Editor'
   | 'Messenger'
@@ -103,6 +104,14 @@ const components: ComponentGroup[] = [
             breadcrumbParentKey: 'nav.codeEditor',
             icon: MouseIcon,
             component: lazy(() => import('./examples/InputEvents'))
+          },
+          {
+            id: 'code-editor-diff',
+            titleKey: 'nav.diffEditor',
+            descriptionKey: 'component.diffEditor.description',
+            breadcrumbParentKey: 'nav.codeEditor',
+            icon: CodeIcon,
+            component: lazy(() => import('./examples/DiffEditor'))
           },
           {
             id: 'code-editor-typescript-lsp',

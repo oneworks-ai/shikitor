@@ -6,7 +6,7 @@ import { installCursorGeometryLayer } from './cursor-geometry-layer'
 
 export interface LineWidget {
   id: string
-  /** One-based source line after which the region is inserted. */
+  /** One-based source line after which the region is inserted. Use 0 before the first line. */
   afterLine: number
   className?: string
   minHeight?: number
@@ -14,7 +14,12 @@ export interface LineWidget {
 }
 
 export interface LineWidgetsOptions {
-  widgets: LineWidget[]
+  widgets: LineWidget[] | (() => readonly LineWidget[])
+  onReady?(controller: LineWidgetsController): void
+}
+
+export interface LineWidgetsController {
+  refresh(): void
 }
 
 export default definePlugin({
@@ -114,6 +119,7 @@ export default definePlugin({
 
     function renderSelection() {
       selectionLayer.replaceChildren()
+      if (target.classList.contains('shikitor--fold-collapsed')) return
       const start = Math.min(input.selectionStart, input.selectionEnd)
       const end = Math.max(input.selectionStart, input.selectionEnd)
       if (start === end || document.activeElement !== input) return
@@ -136,6 +142,15 @@ export default definePlugin({
       widgetDisposers = []
       target.querySelectorAll<HTMLElement>('[data-shikitor-line-widget]')
         .forEach(element => element.remove())
+      input.style.removeProperty('--shikitor-line-widget-extra-height')
+      input.style.removeProperty('padding-bottom')
+    }
+
+    function syncInputHeight() {
+      const extraHeight = [...target.querySelectorAll<HTMLElement>('.shikitor-line-widget')]
+        .reduce((height, widget) => height + widget.getBoundingClientRect().height, 0)
+      input.style.setProperty('--shikitor-line-widget-extra-height', `${extraHeight}px`)
+      input.style.paddingBottom = `${extraHeight}px`
     }
 
     function render() {
@@ -144,13 +159,17 @@ export default definePlugin({
       clearWidgets()
       const outputAnchors = new Map<number, Element>()
       const gutterAnchors = new Map<number, Element>()
-      const widgets = [...(options.widgets ?? [])]
-        .filter(widget => Number.isInteger(widget.afterLine) && widget.afterLine > 0)
+      const configuredWidgets = typeof options.widgets === 'function'
+        ? options.widgets()
+        : options.widgets
+      const widgets = [...(configuredWidgets ?? [])]
+        .filter(widget => Number.isInteger(widget.afterLine) && widget.afterLine >= 0)
         .sort((a, b) => a.afterLine - b.afterLine)
 
       for (const widget of widgets) {
-        const outputLine = output.querySelector<HTMLElement>(`[data-line="${widget.afterLine}"]`)
-        const gutterLine = gutters.querySelector<HTMLElement>(`[data-line="${widget.afterLine}"]`)
+        const anchorLine = Math.max(1, widget.afterLine)
+        const outputLine = output.querySelector<HTMLElement>(`[data-line="${anchorLine}"]`)
+        const gutterLine = gutters.querySelector<HTMLElement>(`[data-line="${anchorLine}"]`)
         if (!outputLine || !gutterLine) continue
 
         const region = document.createElement('div')
@@ -166,8 +185,10 @@ export default definePlugin({
 
         const outputAnchor = outputAnchors.get(widget.afterLine) ?? outputLine
         const gutterAnchor = gutterAnchors.get(widget.afterLine) ?? gutterLine
-        outputAnchor.after(region)
-        gutterAnchor.after(spacer)
+        if (widget.afterLine === 0 && !outputAnchors.has(widget.afterLine)) outputAnchor.before(region)
+        else outputAnchor.after(region)
+        if (widget.afterLine === 0 && !gutterAnchors.has(widget.afterLine)) gutterAnchor.before(spacer)
+        else gutterAnchor.after(spacer)
         outputAnchors.set(widget.afterLine, region)
         gutterAnchors.set(widget.afterLine, spacer)
 
@@ -179,6 +200,7 @@ export default definePlugin({
             `${gutters.getBoundingClientRect().width}px`
           )
           spacer.style.height = `${region.getBoundingClientRect().height}px`
+          syncInputHeight()
           renderCursor()
           renderSelection()
         }
@@ -199,14 +221,32 @@ export default definePlugin({
       renderFrame = requestAnimationFrame(render)
     }
 
-    const observer = new MutationObserver(scheduleRender)
+    const hasLineStructureMutation = (records: MutationRecord[]) => records.some(record => (
+      [...record.addedNodes, ...record.removedNodes].some(node => (
+        node instanceof Element
+        && (
+          node.matches('.shikitor-output-line, .shikitor-gutter-line')
+          || !!node.querySelector('.shikitor-output-line, .shikitor-gutter-line')
+        )
+      ))
+    ))
+    const observer = new MutationObserver(records => {
+      if (hasLineStructureMutation(records)) scheduleRender()
+    })
     let pointerAnchor: number | undefined
     let mappedPointerSelection: { anchor: number; focus: number } | undefined
     let mappedPointerExpiresAt = 0
+    const isInteractiveTarget = (event: Event) => {
+      if (!(event.target instanceof Element) || event.target === input) return false
+      return !!event.target.closest(
+        '.shikitor-line-widget, button, a, input, select, textarea, [role="button"]'
+      )
+    }
     const onPointerDown = (event: PointerEvent) => {
       if (
         event.button !== 0
-        || (event.target instanceof Element && event.target.closest('.shikitor-line-widget'))
+        || target.classList.contains('shikitor--fold-collapsed')
+        || isInteractiveTarget(event)
       ) return
       const rect = container.getBoundingClientRect()
       if (
@@ -260,8 +300,9 @@ export default definePlugin({
       pointerAnchor = undefined
     }
     const onClickMapped = (event: MouseEvent) => {
+      if (target.classList.contains('shikitor--fold-collapsed')) return
       if (!mappedPointerSelection || performance.now() > mappedPointerExpiresAt) return
-      if (event.target instanceof Element && event.target.closest('.shikitor-line-widget')) return
+      if (isInteractiveTarget(event)) return
       const rect = container.getBoundingClientRect()
       if (
         event.clientX < rect.left
@@ -297,6 +338,7 @@ export default definePlugin({
     input.addEventListener('blur', renderSelection)
     ctx.on('shikitor/change', scheduleRender)
     ctx.on('shikitor/cursor-change', renderCursor)
+    options.onReady?.({ refresh: scheduleRender })
     scheduleRender()
     return () => {
       observer.disconnect()

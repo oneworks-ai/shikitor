@@ -1,0 +1,185 @@
+.shikitor--diff {
+  --shikitor-diff-added: color-mix(in srgb, #2da44e 15%, transparent);
+  --shikitor-diff-added-strong: color-mix(in srgb, #2da44e 32%, transparent);
+  --shikitor-diff-removed: color-mix(in srgb, #cf222e 14%, transparent);
+  --shikitor-diff-removed-strong: color-mix(in srgb, #cf222e 30%, transparent);
+
+  .shikitor-diff-current {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    height: 100%;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .shikitor-output-line[data-diff-kind='added'],
+  .shikitor-output-line[data-diff-kind='modified'],
+  .shikitor-gutter-line[data-diff-kind='added'],
+  .shikitor-gutter-line[data-diff-kind='modified'] {
+    background-color: var(--shikitor-diff-added);
+  }
+}
+
+.shikitor-diff-original {
+  display: none;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid var(--shikitor-fg-color-op8);
+  background: var(--shikitor-bg-color);
+  font-family: var(--font-family, monospace), serif;
+  font-size: inherit;
+  line-height: var(--line-height);
+  user-select: text;
+}
+
+.shikitor--diff.shikitor--diff-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+
+  .shikitor-diff-original {
+    display: block;
+  }
+}
+
+.shikitor-diff-original__rows {
+  width: 100%;
+  min-width: max-content;
+  will-change: transform;
+}
+
+.shikitor-diff-original__row {
+  display: grid;
+  min-width: 100%;
+  height: var(--line-height);
+  grid-template-columns: calc(var(--shikitor-diff-old-digits) + 32px) minmax(0, 1fr);
+
+  &[data-diff-kind='removed'],
+  &[data-diff-kind='modified'] {
+    background: var(--shikitor-diff-removed);
+  }
+
+  &[data-diff-kind='added'] {
+    background: var(--shikitor-diff-added);
+  }
+}
+
+.shikitor-diff-original__gutter,
+.shikitor-diff-removed-row__gutter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 8px;
+  color: var(--shikitor-fg-color-op4);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+
+  i {
+    width: 1ch;
+    color: var(--shikitor-fg-color-op3);
+    font-style: normal;
+    text-align: center;
+  }
+}
+
+.shikitor-diff-original__code,
+.shikitor-diff-removed-row__code {
+  min-width: 0;
+  overflow: hidden;
+  white-space: pre;
+
+  > .shikitor-output-line {
+    min-width: max-content;
+    transform: translateX(calc(-1 * var(--shikitor-diff-scroll-l, var(--shikitor-scroll-l, 0px))));
+  }
+}
+
+.shikitor-diff-gutter-marker {
+  width: 1ch;
+  margin-right: 6px;
+  color: var(--shikitor-fg-color-op3);
+  font-family: var(--font-family, monospace), serif;
+  user-select: none;
+}
+
+.shikitor-diff-inline {
+  border-radius: 2px;
+
+  &--added {
+    background: var(--shikitor-diff-added-strong);
+  }
+
+  &--removed {
+    background: var(--shikitor-diff-removed-strong);
+  }
+}
+
+.shikitor-diff-removed-row {
+  position: relative;
+  display: grid;
+  height: var(--line-height);
+  grid-template-columns: var(--shikitor-line-widget-gutter-width) minmax(0, 1fr);
+  background: var(--shikitor-diff-removed);
+  font: inherit;
+  line-height: var(--line-height);
+}
+
+.shikitor-diff-context-fold {
+  background: var(--shikitor-fg-color-op9);
+
+  .shikitor-diff-original__gutter {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .shikitor-diff-original__code {
+    display: flex;
+    align-items: center;
+  }
+}
+
+.shikitor-diff-hunk-actions {
+  position: relative;
+  z-index: 11;
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  margin: 1px 6px 1px 0;
+  border: 1px solid var(--shikitor-fg-color-op8);
+  border-radius: 5px;
+  background: var(--shikitor-bg-color);
+  box-shadow: 0 2px 8px var(--shikitor-bg-color-op5);
+
+  button {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    color: var(--shikitor-fg-color-op2);
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    line-height: 18px;
+    place-items: center;
+
+    + button {
+      border-left: 1px solid var(--shikitor-fg-color-op8);
+    }
+
+    &:hover,
+    &:focus-visible {
+      color: var(--shikitor-fg-color);
+      background: var(--shikitor-fg-color-op8);
+      outline: none;
+    }
+  }
+}
+
+@media (max-width: 720px) {
+  .shikitor--diff.shikitor--diff-split {
+    grid-template-columns: minmax(0, 46%) minmax(0, 54%);
+  }
+}
