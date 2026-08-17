@@ -1,5 +1,5 @@
 import { create } from '@shikitor/core'
-import type { InputShikitorPlugin, Shikitor } from '@shikitor/core'
+import type { InputShikitorPlugin, Shikitor, ShikitorOptions } from '@shikitor/core'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   HostObservable,
@@ -61,27 +61,44 @@ export function ShikitorSenderBridge({
   const editorRef = useRef<Shikitor | undefined>(undefined)
   const draft = useInput(state => state.draft)
   const draftRef = useRef(draft)
+  const inputActionsRef = useRef(inputActions)
+  const translateRef = useRef(t)
+  const editorTabLabelRef = useRef(editorTabLabel)
   const plugins = usePlugins(value => value)
   const colorScheme = useColorScheme(value => value)
   const appearance = useAppearance(value => value)
   const senderAppearance = resolveSurfaceAppearance(appearance, 'sender')
+  const translate = useMemo<typeof t>(
+    () => (key, params) => translateRef.current(key, params),
+    [],
+  )
   const suggestionsPlugin = useMemo(
-    () => createSenderSuggestionsPlugin(catalog, sessionId, runtime, t),
-    [catalog, runtime, sessionId, t],
+    () => createSenderSuggestionsPlugin(catalog, sessionId, runtime, translate),
+    [catalog, runtime, sessionId, translate],
   )
   const tokenPlugin = useMemo(() => createSenderTokenIcons({
     service: runtime,
-    openFileHint: () => t('file.openHint'),
+    openFileHint: () => translateRef.current('file.openHint'),
     onOpenFile: (path) => {
       const document = anchorRef.current?.ownerDocument
       const editorTab = document === undefined
         ? undefined
         : [...document.querySelectorAll<HTMLButtonElement>('button[role="tab"]')]
-            .find(button => button.textContent?.trim() === editorTabLabel())
+            .find(button => button.textContent?.trim() === editorTabLabelRef.current())
       editorTab?.click()
       void runtime.openFile(sessionId, path)
     },
-  }), [editorTabLabel, runtime, sessionId, t])
+  }), [runtime, sessionId])
+  const editorOptions = useMemo<ShikitorOptions>(() => ({
+    language: 'markdown',
+    lineNumbers: 'off',
+    hideSelfCursorUsername: true,
+    readOnly: input.phase !== 'plain',
+    theme: resolveShikitorTheme(senderAppearance, colorScheme),
+    plugins: [...plugins, suggestionsPlugin, tokenPlugin],
+  }), [colorScheme, input.phase, plugins, senderAppearance, suggestionsPlugin, tokenPlugin])
+  const editorOptionsRef = useRef(editorOptions)
+  const cursorStyleRef = useRef(senderAppearance.cursor)
   const [mode, setMode] = useState<'native' | 'shikitor'>(() =>
     __DSH_SHIKITOR_DEV__ && localStorage.getItem(SENDER_MODE_KEY) === 'native'
       ? 'native'
@@ -89,6 +106,11 @@ export function ShikitorSenderBridge({
   )
 
   draftRef.current = draft
+  inputActionsRef.current = inputActions
+  translateRef.current = t
+  editorTabLabelRef.current = editorTabLabel
+  editorOptionsRef.current = editorOptions
+  cursorStyleRef.current = senderAppearance.cursor
 
   useLayoutEffect(() => {
     if (mode !== 'shikitor') return
@@ -104,24 +126,25 @@ export function ShikitorSenderBridge({
 
     void create(textarea, {
       value: textarea.value,
-      language: 'markdown',
-      lineNumbers: 'off',
-      hideSelfCursorUsername: true,
-      readOnly: input.phase !== 'plain',
-      theme: resolveShikitorTheme(senderAppearance, colorScheme),
-      plugins: [...plugins, suggestionsPlugin, tokenPlugin],
+      ...editorOptionsRef.current,
       onChange: value => {
         queueMicrotask(() => {
           // DSH's own textarea handler normally arrives first. Only write
           // when a Shikitor plugin changed the value outside that native path.
-          if (active && draftRef.current !== value) inputActions.setDraft(value)
+          if (active && draftRef.current !== value) inputActionsRef.current.setDraft(value)
         })
       },
     }, { abort: abort.signal }).then(editor => {
       mounted = editor
       editorRef.current = editor
-      editor.element.dataset.dshShikitorCursor = senderAppearance.cursor
+      editor.element.dataset.dshShikitorCursor = cursorStyleRef.current
       if (editor.value !== draftRef.current) editor.value = draftRef.current
+      void editor.updateOptions(current => ({
+        ...current,
+        ...editorOptionsRef.current,
+      })).catch(error => {
+        console.error('Failed to update Shikitor sender', error)
+      })
     }).catch(error => {
       if (!abort.signal.aborted) console.error('Failed to attach Shikitor sender', error)
     })
@@ -132,7 +155,19 @@ export function ShikitorSenderBridge({
       mounted?.[Symbol.dispose]()
       if (editorRef.current === mounted) editorRef.current = undefined
     }
-  }, [colorScheme, input.phase, inputActions, mode, plugins, senderAppearance, suggestionsPlugin, tokenPlugin])
+  }, [mode, sessionId])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.element.dataset.dshShikitorCursor = senderAppearance.cursor
+    void editor.updateOptions(current => ({
+      ...current,
+      ...editorOptions,
+    })).catch(error => {
+      console.error('Failed to update Shikitor sender', error)
+    })
+  }, [editorOptions, senderAppearance.cursor])
 
   useEffect(() => {
     const editor = editorRef.current

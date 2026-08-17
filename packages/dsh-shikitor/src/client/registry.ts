@@ -55,6 +55,27 @@ export interface ShikitorAppearanceUpdate {
   readonly sender?: Partial<ShikitorSurfaceAppearance> | null
 }
 
+export interface ShikitorEditorPreferences {
+  readonly autoSave: boolean
+}
+
+export interface ShikitorSenderPreferences {
+  /** Comma/newline-separated folder globs. Empty means every indexed folder. */
+  readonly folderIncludes: string
+  /** Comma/newline-separated folder globs removed from sender file search. */
+  readonly folderExcludes: string
+}
+
+export interface ShikitorPreferences {
+  readonly editor: ShikitorEditorPreferences
+  readonly sender: ShikitorSenderPreferences
+}
+
+export interface ShikitorPreferencesUpdate {
+  readonly editor?: Partial<ShikitorEditorPreferences>
+  readonly sender?: Partial<ShikitorSenderPreferences>
+}
+
 export interface ShikitorEditorDocument {
   readonly dirty: boolean
   readonly error?: string
@@ -121,7 +142,9 @@ export function resolveSurfaceAppearance(
 const APPEARANCE_STORAGE_KEY = 'dsh-shikitor.appearance.v2'
 const LEGACY_APPEARANCE_STORAGE_KEY = 'dsh-shikitor.appearance.v1'
 const FILE_ICON_RULES_STORAGE_KEY = 'dsh-shikitor.file-icons.v1'
+const PREFERENCES_STORAGE_KEY = 'dsh-shikitor.preferences.v1'
 const MAX_EDITOR_FILE_BYTES = 2 * 1024 * 1024
+const AUTO_SAVE_DELAY_MS = 500
 
 const defaultAppearance: ShikitorAppearance = {
   general: { colorScheme: 'auto', cursor: 'line', theme: 'github' },
@@ -132,6 +155,11 @@ const defaultAppearance: ShikitorAppearance = {
     lineNumbers: true,
   },
   fileIcons: 'colored',
+}
+
+const defaultPreferences: ShikitorPreferences = {
+  editor: { autoSave: true },
+  sender: { folderExcludes: '', folderIncludes: '' },
 }
 
 interface FileReadResponse {
@@ -258,6 +286,32 @@ function readAppearance(): ShikitorAppearance {
   }
 }
 
+function readPreferences(): ShikitorPreferences {
+  if (typeof localStorage === 'undefined') return defaultPreferences
+  try {
+    const value = JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? 'null') as unknown
+    const editor = isRecord(value) && isRecord(value.editor) ? value.editor : {}
+    const sender = isRecord(value) && isRecord(value.sender) ? value.sender : {}
+    return {
+      editor: {
+        autoSave: typeof editor.autoSave === 'boolean'
+          ? editor.autoSave
+          : defaultPreferences.editor.autoSave,
+      },
+      sender: {
+        folderExcludes: typeof sender.folderExcludes === 'string'
+          ? sender.folderExcludes.slice(0, 4_000)
+          : defaultPreferences.sender.folderExcludes,
+        folderIncludes: typeof sender.folderIncludes === 'string'
+          ? sender.folderIncludes.slice(0, 4_000)
+          : defaultPreferences.sender.folderIncludes,
+      },
+    }
+  } catch {
+    return defaultPreferences
+  }
+}
+
 function readConfiguredFileIconRules(): readonly ShikitorConfiguredFileIconRule[] {
   if (typeof localStorage === 'undefined') return []
   try {
@@ -345,8 +399,10 @@ export interface ShikitorService {
   readonly appearance: HostObservable<ShikitorAppearance>
   readonly configuredFileIconRules: HostObservable<readonly ShikitorConfiguredFileIconRule[]>
   readonly fileIconRules: HostObservable<readonly ShikitorFileIconRule[]>
+  readonly preferences: HostObservable<ShikitorPreferences>
   configureAppearance(update: ShikitorAppearanceUpdate): void
   configureFileIconRules(rules: readonly ShikitorConfiguredFileIconRule[]): void
+  configurePreferences(update: ShikitorPreferencesUpdate): void
   configureSurface(surface: ShikitorSurface, update: Partial<ShikitorSurfaceAppearance>): void
   createFile(sessionId: SessionId, path: string): Promise<void>
   document(sessionId: SessionId): HostObservable<ShikitorEditorDocument>
@@ -362,6 +418,7 @@ export interface ShikitorService {
   resetSurface(surface: ShikitorSurface): void
   resolveAppearance(surface: ShikitorSurface): ShikitorSurfaceAppearance
   resolveFileIcon(path: string): ResolvedFileIcon
+  saveDocument(sessionId: SessionId): Promise<void>
   source(surface: ShikitorSurface): HostObservable<readonly InputShikitorPlugin[]>
   updateDocument(sessionId: SessionId, value: string): void
 }
@@ -371,12 +428,15 @@ export class ShikitorRuntime extends Service implements ShikitorService {
   readonly appearance = new ObservableValue(readAppearance())
   readonly configuredFileIconRules = new ObservableValue(readConfiguredFileIconRules())
   readonly fileIconRules: HostObservable<readonly ShikitorFileIconRule[]>
+  readonly preferences = new ObservableValue(readPreferences())
   private readonly connection: ConnectionHandle
   private configuredFileIconDisposers: Array<() => void> = []
   private readonly documents = new Map<SessionId, ObservableValue<ShikitorEditorDocument>>()
   private readonly icons = new FileIconRegistry()
   private readonly imageSources = new Map<string, CachedImageSource>()
   private readonly editorContextRevisions = new Map<string, number>()
+  private readonly autoSaveTimers = new Map<SessionId, ReturnType<typeof setTimeout>>()
+  private readonly saveQueues = new Map<SessionId, Promise<void>>()
   private readonly sessions: ISessions
   private readonly sources: Record<ShikitorSurface, PluginList> = {
     sender: new PluginList(),
@@ -436,12 +496,31 @@ export class ShikitorRuntime extends Service implements ShikitorService {
     this.applyConfiguredFileIconRules()
   }
 
+  configurePreferences(update: ShikitorPreferencesUpdate): void {
+    const current = this.preferences.getSnapshot()
+    const next: ShikitorPreferences = {
+      editor: { ...current.editor, ...update.editor },
+      sender: { ...current.sender, ...update.sender },
+    }
+    this.preferences.set(next)
+    try { localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(next)) } catch {}
+    if (current.editor.autoSave === next.editor.autoSave) return
+    if (next.editor.autoSave) {
+      for (const [sessionId, source] of this.documents) {
+        if (source.getSnapshot().dirty) this.scheduleDocumentSave(sessionId)
+      }
+    } else {
+      for (const sessionId of [...this.autoSaveTimers.keys()]) this.clearDocumentSaveTimer(sessionId)
+    }
+  }
+
   configureSurface(surface: ShikitorSurface, update: Partial<ShikitorSurfaceAppearance>): void {
     if (surface === 'sender') this.configureAppearance({ sender: update })
     else this.configureAppearance({ editor: { surface: update } })
   }
 
   async createFile(sessionId: SessionId, path: string): Promise<void> {
+    await this.saveBeforeDocumentSwitch(sessionId)
     const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
     if (cwd === undefined) throw new Error('当前会话没有工作区')
     const result = await this.connection.rpc.call(
@@ -467,6 +546,11 @@ export class ShikitorRuntime extends Service implements ShikitorService {
 
   async openFile(sessionId: SessionId, path: string): Promise<void> {
     const source = this.documentSource(sessionId)
+    try {
+      await this.saveBeforeDocumentSwitch(sessionId)
+    } catch {
+      return
+    }
     const previous = source.getSnapshot()
     const name = fileName(path)
     source.set({ ...previous, dirty: false, name, path, status: 'loading' })
@@ -545,13 +629,79 @@ export class ShikitorRuntime extends Service implements ShikitorService {
     return this.icons.resolve(path)
   }
 
+  saveDocument(sessionId: SessionId): Promise<void> {
+    this.clearDocumentSaveTimer(sessionId)
+    const previous = this.saveQueues.get(sessionId) ?? Promise.resolve()
+    const queued = previous.catch(() => {}).then(async () => { await this.persistDocument(sessionId) })
+    this.saveQueues.set(sessionId, queued)
+    void queued.finally(() => {
+      if (this.saveQueues.get(sessionId) === queued) this.saveQueues.delete(sessionId)
+    }).catch(() => {})
+    return queued
+  }
+
   source(surface: ShikitorSurface): HostObservable<readonly InputShikitorPlugin[]> {
     return this.sources[surface]
   }
 
   updateDocument(sessionId: SessionId, value: string): void {
     const source = this.documentSource(sessionId)
-    source.set({ ...source.getSnapshot(), dirty: true, value })
+    source.set({ ...source.getSnapshot(), dirty: true, error: undefined, value })
+    if (this.preferences.getSnapshot().editor.autoSave) this.scheduleDocumentSave(sessionId)
+  }
+
+  private clearDocumentSaveTimer(sessionId: SessionId): void {
+    const timer = this.autoSaveTimers.get(sessionId)
+    if (timer === undefined) return
+    clearTimeout(timer)
+    this.autoSaveTimers.delete(sessionId)
+  }
+
+  private scheduleDocumentSave(sessionId: SessionId): void {
+    this.clearDocumentSaveTimer(sessionId)
+    const timer = setTimeout(() => {
+      if (this.autoSaveTimers.get(sessionId) !== timer) return
+      this.autoSaveTimers.delete(sessionId)
+      void this.saveDocument(sessionId).catch(() => {})
+    }, AUTO_SAVE_DELAY_MS)
+    this.autoSaveTimers.set(sessionId, timer)
+  }
+
+  private async saveBeforeDocumentSwitch(sessionId: SessionId): Promise<void> {
+    const document = this.documentSource(sessionId).getSnapshot()
+    if (!document.dirty || !this.preferences.getSnapshot().editor.autoSave) return
+    await this.saveDocument(sessionId)
+  }
+
+  private async persistDocument(sessionId: SessionId): Promise<void> {
+    const source = this.documentSource(sessionId)
+    const document = source.getSnapshot()
+    if (!document.dirty) return
+    if (document.path === undefined) throw new Error('没有可保存的文件')
+    const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    if (cwd === undefined) throw new Error('当前会话没有工作区')
+    try {
+      const result = await this.connection.rpc.call(
+        '/api',
+        'shikitorCatalog/write',
+        { args: { cwd, path: document.path, text: document.value, maxBytes: MAX_EDITOR_FILE_BYTES } },
+      )
+      if (!result.ok) throw new Error(result.error.message)
+      if (!isFileReadResponse(result.value)) throw new TypeError('file writer returned an invalid payload')
+      const current = source.getSnapshot()
+      if (current === document && result.value.path === document.path) {
+        source.set({ ...current, dirty: false, error: undefined, status: 'ready' })
+      }
+    } catch (error) {
+      const current = source.getSnapshot()
+      if (current === document) {
+        source.set({
+          ...current,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+      throw error
+    }
   }
 
   private nextEditorContextRevision(leaseId: string): number {

@@ -43,12 +43,16 @@ export type {
   ShikitorCursorStyle,
   ShikitorEditorAppearance,
   ShikitorEditorAppearanceUpdate,
+  ShikitorEditorPreferences,
   ShikitorEditorContext,
   ShikitorEditorContextComment,
   ShikitorEditorContextFile,
   ShikitorEditorContextPosition,
   ShikitorEditorContextSelection,
   ShikitorFileIconMode,
+  ShikitorPreferences,
+  ShikitorPreferencesUpdate,
+  ShikitorSenderPreferences,
   ShikitorService,
   ShikitorSurface,
   ShikitorSurfaceAppearance,
@@ -79,7 +83,11 @@ export const inject = [
 /** Install `ctx.shikitor` and the first sender/editor surfaces. */
 export function apply(ctx: ClientContext): void {
   const shikitor = new ShikitorRuntime(ctx)
-  const catalog = new SenderCatalog(ctx)
+  const catalog = new SenderCatalog(ctx, shikitor)
+  ctx.effect(
+    () => shikitor.preferences.subscribe(() => { catalog.refreshFileFilters() }),
+    'dsh-shikitor: sender file filters',
+  )
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-shikitor: dictionaries')
   const t = ctx.locale.bind(NS)
 
@@ -201,6 +209,7 @@ export function apply(ctx: ClientContext): void {
       hooks: {
         appearance: shikitor.appearance,
         configuredFileIconRules: shikitor.configuredFileIconRules,
+        preferences: shikitor.preferences,
       },
       runtime: shikitor,
     }),

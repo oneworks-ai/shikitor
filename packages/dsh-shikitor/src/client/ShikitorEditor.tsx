@@ -96,6 +96,8 @@ export function ShikitorEditor({
   const [createOpen, setCreateOpen] = useState(false)
   const [createPath, setCreatePath] = useState('')
   const [createError, setCreateError] = useState<string>()
+  const [saving, setSaving] = useState(false)
+  const pendingSaves = useRef(0)
   const editorAppearance = resolveSurfaceAppearance(appearance, 'editor')
   const theme = resolveShikitorTheme(editorAppearance, colorScheme)
   const editorPlugins = useMemo(() => [...plugins], [plugins])
@@ -115,6 +117,16 @@ export function ShikitorEditor({
   const relativePath = workspaceRelativePath(document.path, cwd, document.name)
   const breadcrumb = relativePath.split('/').filter(Boolean)
   const suggestedFiles = useMemo(() => suggestedWorkspaceFiles(tree.files), [tree.files])
+
+  const saveDocument = (): void => {
+    if (document.path === undefined || !document.dirty) return
+    pendingSaves.current += 1
+    setSaving(true)
+    void runtime.saveDocument(sessionId).catch(() => {}).finally(() => {
+      pendingSaves.current -= 1
+      if (pendingSaves.current === 0) setSaving(false)
+    })
+  }
 
   useEffect(() => {
     let active = true
@@ -194,6 +206,12 @@ export function ShikitorEditor({
       data-conversation-composer-overlay=""
       data-shikitor-surface="editor"
       data-dsh-shikitor-cursor={editorAppearance.cursor}
+      onKeyDownCapture={(event) => {
+        if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLocaleLowerCase() === 's') {
+          event.preventDefault()
+          saveDocument()
+        }
+      }}
     >
       <div className="dsh-shikitor-editor__toolbar">
         <div className="dsh-shikitor-editor__toolbar-main">
@@ -215,20 +233,38 @@ export function ShikitorEditor({
               ))}
             </nav>
           )}
+          {document.path !== undefined && document.status === 'ready' && document.error !== undefined && (
+            <span className="dsh-shikitor-editor__save-error" role="alert" title={document.error}>
+              {document.error}
+            </span>
+          )}
         </div>
-        <button
-          type="button"
-          className="dsh-shikitor-editor__tree-toggle"
-          aria-controls={treeId}
-          aria-expanded={treeOpen}
-          aria-label={treeOpen ? t('tree.collapse') : t('tree.expand')}
-          title={treeOpen ? t('tree.collapse') : t('tree.expand')}
-          onClick={() => { setTreeOpen(value => !value) }}
-        >
-          <span className="shikitor-icon" aria-hidden="true">
-            {treeOpen ? 'right_panel_close' : 'right_panel_open'}
-          </span>
-        </button>
+        <div className="dsh-shikitor-editor__toolbar-actions">
+          <button
+            type="button"
+            className="dsh-shikitor-editor__toolbar-button dsh-shikitor-editor__save"
+            data-dirty={document.dirty ? 'true' : undefined}
+            disabled={document.path === undefined || !document.dirty || saving}
+            aria-label={saving ? t('editor.saving') : t('editor.save')}
+            title={saving ? t('editor.saving') : t('editor.saveShortcut')}
+            onClick={saveDocument}
+          >
+            <span className="shikitor-icon" aria-hidden="true">save</span>
+          </button>
+          <button
+            type="button"
+            className="dsh-shikitor-editor__toolbar-button dsh-shikitor-editor__tree-toggle"
+            aria-controls={treeId}
+            aria-expanded={treeOpen}
+            aria-label={treeOpen ? t('tree.collapse') : t('tree.expand')}
+            title={treeOpen ? t('tree.collapse') : t('tree.expand')}
+            onClick={() => { setTreeOpen(value => !value) }}
+          >
+            <span className="shikitor-icon" aria-hidden="true">
+              {treeOpen ? 'right_panel_close' : 'right_panel_open'}
+            </span>
+          </button>
+        </div>
       </div>
       <div className="dsh-shikitor-editor__workspace">
         {document.path === undefined

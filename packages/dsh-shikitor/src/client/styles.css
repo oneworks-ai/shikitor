@@ -449,7 +449,14 @@
   text-overflow: ellipsis;
 }
 
-.dsh-shikitor-editor__tree-toggle {
+.dsh-shikitor-editor__toolbar-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.dsh-shikitor-editor__toolbar-button {
   display: inline-flex;
   width: 24px;
   height: 24px;
@@ -464,18 +471,33 @@
   cursor: pointer;
 }
 
-.dsh-shikitor-editor__tree-toggle:hover,
-.dsh-shikitor-editor__tree-toggle:focus-visible {
+.dsh-shikitor-editor__toolbar-button:hover,
+.dsh-shikitor-editor__toolbar-button:focus-visible,
+.dsh-shikitor-editor__save[data-dirty='true'] {
   color: var(--dsw-alias-label-primary);
 }
 
-.dsh-shikitor-editor__tree-toggle:focus-visible {
+.dsh-shikitor-editor__toolbar-button:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
 }
 
-.dsh-shikitor-editor__tree-toggle .shikitor-icon {
+.dsh-shikitor-editor__toolbar-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.dsh-shikitor-editor__toolbar-button .shikitor-icon {
   font-size: 18px;
+}
+
+.dsh-shikitor-editor__save-error {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-xxxs-11);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dsh-shikitor-editor__workspace {

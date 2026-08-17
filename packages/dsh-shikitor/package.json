@@ -39,9 +39,12 @@
   },
   "scripts": {
     "build": "tsdown",
-    "build:dev": "tsdown --env.DSH_SHIKITOR_DEV true"
+    "build:dev": "tsdown --env.DSH_SHIKITOR_DEV true",
+    "screenshots": "node ./scripts/capture-screenshots.mjs",
+    "screenshots:install": "playwright install chromium"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "link:../../vendors/deepseek-ai/deepseek-harness/packages/util/atomic-write",
     "@deepseek-ai/dsh-agent": "link:../../vendors/deepseek-ai/deepseek-harness/packages/core/agent",
     "@deepseek-ai/dsh-llm": "link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm",
     "@deepseek-ai/dsh-skill-filesystem": "link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem"
@@ -61,6 +64,7 @@
     "@shikitor/core": "workspace:^",
     "@shikitor/react": "workspace:^",
     "@types/react": "18.2.75",
+    "playwright": "^1.62.1",
     "react": "^18.2.0",
     "sass": "^1.90.0",
     "shiki": "^1.12.1",

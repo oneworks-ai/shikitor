@@ -29,6 +29,7 @@ import {
   type ShikitorColorScheme,
   type ShikitorCursorStyle,
   type ShikitorFileIconMode,
+  type ShikitorPreferences,
   type ShikitorService,
   type ShikitorSurface,
   type ShikitorTheme,
@@ -38,6 +39,7 @@ interface SettingsInjected {
   hooks: {
     appearance: HostObservable<ShikitorAppearance>
     configuredFileIconRules: HostObservable<readonly ShikitorConfiguredFileIconRule[]>
+    preferences: HostObservable<ShikitorPreferences>
   }
   runtime: ShikitorService
 }
@@ -404,12 +406,14 @@ export function ShikitorSettings({
   t,
   useAppearance,
   useConfiguredFileIconRules,
+  usePreferences,
 }: ShikitorSettingsProps) {
   const tabsId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const appearance = useAppearance(value => value)
   const configuredFileIconRules = useConfiguredFileIconRules(value => value)
+  const preferences = usePreferences(value => value)
   const fileIconOptions: readonly { label: string; value: ShikitorFileIconMode }[] = [
     { label: t('fileIcons.colored'), value: 'colored' },
     { label: t('fileIcons.monochrome'), value: 'monochrome' },
@@ -432,8 +436,40 @@ export function ShikitorSettings({
           t={t}
           onChange={update => { runtime.configureSurface(surface, update) }}
         />
+        {surface === 'sender' && (
+          <>
+            <TextField
+              id="dsh-shikitor-sender-folder-includes"
+              label={t('folderIncludes.label')}
+              hint={t('folderIncludes.hint')}
+              placeholder="apps/**, packages/**"
+              value={preferences.sender.folderIncludes}
+              onChange={folderIncludes => {
+                runtime.configurePreferences({ sender: { folderIncludes } })
+              }}
+            />
+            <TextField
+              id="dsh-shikitor-sender-folder-excludes"
+              label={t('folderExcludes.label')}
+              hint={t('folderExcludes.hint')}
+              placeholder="fixtures/**, generated/**"
+              value={preferences.sender.folderExcludes}
+              onChange={folderExcludes => {
+                runtime.configurePreferences({ sender: { folderExcludes } })
+              }}
+            />
+          </>
+        )}
         {surface === 'editor' && (
           <>
+            <SwitchField
+              id="dsh-shikitor-editor-auto-save"
+              label={t('autoSave.label')}
+              hint={t('autoSave.hint')}
+              t={t}
+              checked={preferences.editor.autoSave}
+              onChange={autoSave => { runtime.configurePreferences({ editor: { autoSave } }) }}
+            />
             <SwitchField
               id="dsh-shikitor-editor-line-numbers"
               label={t('lineNumbers.label')}

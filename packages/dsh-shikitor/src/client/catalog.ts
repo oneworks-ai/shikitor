@@ -12,6 +12,8 @@ import type {
   TriggerChar,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 
+import { matchesFileIconPattern } from './fileIcons.ts'
+import type { ShikitorSenderPreferences, ShikitorService } from './registry.ts'
 import { createSessionLink } from './sessionLinks.ts'
 
 const FILE_LIMIT = 4_000
@@ -25,6 +27,11 @@ export interface TriggerSuggestion {
   readonly name: string
   readonly description?: string
   readonly icon?: string
+}
+
+export interface TriggerSuggestionPage {
+  readonly suggestions: readonly TriggerSuggestion[]
+  readonly hasMore: boolean
 }
 
 export type MentionProtocol = 'file' | 'plugin'
@@ -95,6 +102,40 @@ function requestsHiddenPath(query: string): boolean {
   return query.split('/').some(segment => segment.startsWith('.'))
 }
 
+function pathDepth(path: string): number {
+  return path.replaceAll('\\', '/').split('/').length - 1
+}
+
+function folderPatterns(value: string): readonly string[] {
+  return value
+    .split(/[\n,]/u)
+    .map(pattern => pattern.trim().replaceAll('\\', '/').replace(/^\.\//u, ''))
+    .filter(Boolean)
+}
+
+function folderPaths(path: string): readonly string[] {
+  const segments = path.replaceAll('\\', '/').split('/').slice(0, -1)
+  if (segments.length === 0) return ['.']
+  return segments.map((_, index) => segments.slice(0, index + 1).join('/'))
+}
+
+function matchesFolderPattern(pattern: string, folder: string): boolean {
+  if (matchesFileIconPattern(pattern, folder)) return true
+  if (!pattern.endsWith('/**')) return false
+  return matchesFileIconPattern(pattern.slice(0, -3), folder)
+}
+
+function matchesFolderFilters(path: string, filters: ShikitorSenderPreferences): boolean {
+  const folders = folderPaths(path)
+  const includes = folderPatterns(filters.folderIncludes)
+  const excludes = folderPatterns(filters.folderExcludes)
+  if (excludes.some(pattern => folders.some(folder => matchesFolderPattern(pattern, folder)))) {
+    return false
+  }
+  return includes.length === 0
+    || includes.some(pattern => folders.some(folder => matchesFolderPattern(pattern, folder)))
+}
+
 function fileName(path: string): string {
   return path.split(/[\\/]/u).at(-1) || path
 }
@@ -121,14 +162,19 @@ function markdownFileLink(cwd: string, path: string): string {
   return `[${markdownLabel(name)}](<${destination}> "${markdownTitle(name)}")`
 }
 
-function matchingFiles(files: readonly string[], query: string): readonly string[] {
+export function filterAndSortWorkspaceFiles(
+  files: readonly string[],
+  query: string,
+  filters: ShikitorSenderPreferences,
+): readonly string[] {
   const includeHidden = requestsHiddenPath(query)
   return files
-    .filter(path => includeHidden || !hasHiddenPathSegment(path))
-    .map(path => ({ path, rank: matchRank(path, query) }))
+    .filter(path => (includeHidden || !hasHiddenPathSegment(path)) && matchesFolderFilters(path, filters))
+    .map(path => ({ path, depth: pathDepth(path), rank: matchRank(path, query) }))
     .filter(candidate => Number.isFinite(candidate.rank))
-    .sort((left, right) => left.rank - right.rank || left.path.localeCompare(right.path))
-    .slice(0, CANDIDATE_LIMIT)
+    .sort((left, right) => left.depth - right.depth
+      || left.rank - right.rank
+      || left.path.localeCompare(right.path))
     .map(({ path }) => path)
 }
 
@@ -138,16 +184,18 @@ export class SenderCatalog {
   private readonly remote: ClientContext['remote']
   private readonly inputTriggers: InputTriggerServiceContract
   private readonly sessions: ISessions
+  private readonly shikitor: ShikitorService
   private readonly fileFetches = new Map<string, PendingCatalog<string>>()
   private readonly skillFetches = new Map<SessionId, PendingCatalog<SkillEntry>>()
   private pluginFetch: PendingCatalog<DynamicCordisInventoryRow> | undefined
   private readonly fileLexiconListeners = new Map<SessionId, Set<() => void>>()
 
-  constructor(ctx: ClientContext) {
+  constructor(ctx: ClientContext, shikitor: ShikitorService) {
     this.connection = ctx.get('connection') as ConnectionHandle
     this.remote = ctx.remote
     this.inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
     this.sessions = ctx.get('sessions') as ISessions
+    this.shikitor = shikitor
     ctx.on('connection/reset', () => { this.clear() })
   }
 
@@ -255,8 +303,7 @@ export class SenderCatalog {
     query: string,
   ): Promise<readonly TriggerSuggestion[]> {
     if (protocol === 'file') {
-      const files = matchingFiles(await this.files(sessionId), query)
-      return files.map(name => ({ trigger: '@', source: 'file', name, description: '文件' }))
+      return (await this.fileSuggestionPage(sessionId, query, 0, CANDIDATE_LIMIT)).suggestions
     }
 
     const rows = await this.plugins()
@@ -279,6 +326,30 @@ export class SenderCatalog {
         name,
         ...(description === undefined ? {} : { description }),
       }))
+  }
+
+  /** Return one depth-ordered page for Shikitor's incrementally rendered file menu. */
+  async fileSuggestionPage(
+    sessionId: SessionId,
+    query: string,
+    offset: number,
+    limit: number,
+  ): Promise<TriggerSuggestionPage> {
+    const files = filterAndSortWorkspaceFiles(
+      await this.files(sessionId),
+      query,
+      this.shikitor.preferences.getSnapshot().sender,
+    )
+    const end = Math.min(files.length, Math.max(0, offset) + Math.max(1, limit))
+    return {
+      suggestions: files.slice(Math.max(0, offset), end).map(name => ({
+        trigger: '@',
+        source: 'file',
+        name,
+        description: '文件',
+      })),
+      hasMore: end < files.length,
+    }
   }
 
   /** Serialize one workspace file as a titled Markdown link with an absolute target. */
@@ -349,7 +420,8 @@ export class SenderCatalog {
       candidates: async (session, { query, signal }) => {
         const files = await this.files(session.sessionId)
         if (signal.aborted) return []
-        return matchingFiles(files, query)
+        return filterAndSortWorkspaceFiles(files, query, this.shikitor.preferences.getSnapshot().sender)
+          .slice(0, CANDIDATE_LIMIT)
           .map((path): InputTriggerCandidate => ({ name: path, description: '文件' }))
       },
       warm: (session) => { void this.files(session.sessionId).catch(() => {}) },
@@ -373,7 +445,18 @@ export class SenderCatalog {
   private settledFiles(sessionId: SessionId): readonly string[] | undefined {
     const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
     if (cwd === undefined) return undefined
-    return this.fileFetches.get(cwd)?.settled?.value
+    const files = this.fileFetches.get(cwd)?.settled?.value
+    return files === undefined
+      ? undefined
+      : filterAndSortWorkspaceFiles(files, '', this.shikitor.preferences.getSnapshot().sender)
+  }
+
+  /** Re-publish native lexicons after sender-side folder rules change. */
+  refreshFileFilters(): void {
+    const state = this.sessions.list.getSnapshot()
+    for (const id of state.ids) {
+      for (const listener of [...(this.fileLexiconListeners.get(id) ?? [])]) listener()
+    }
   }
 
   private controller(sessionId: SessionId): InputTriggerController | undefined {
