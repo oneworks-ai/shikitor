@@ -1,25 +1,54 @@
 {
   "name": "@shikitor/react",
-  "version": "0.1.6",
+  "version": "1.0.0",
   "description": "Shikitor for react",
   "license": "MIT",
-  "files": ["dist", "index.css"],
+  "files": ["dist", "index.css", "LICENSE"],
+  "scripts": {
+    "build": "jiek --root ../.. --filter @shikitor/react build",
+    "prepack": "pnpm run build"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./WithoutCoreEditor": "./src/WithoutCoreEditor.tsx"
   },
   "publishConfig": {
+    "access": "public",
     "exports": {
-      "./index.css": "./index.css"
+      "./index.css": "./index.css",
+      "./package.json": "./package.json",
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.esm.js",
+        "require": "./dist/index.umd.js"
+      },
+      "./WithoutCoreEditor": {
+        "types": "./dist/WithoutCoreEditor.d.ts",
+        "import": "./dist/WithoutCoreEditor.esm.js",
+        "require": "./dist/WithoutCoreEditor.umd.js"
+      }
+    },
+    "types": "./dist/index.d.ts",
+    "main": "./dist/index.umd.js",
+    "module": "./dist/index.esm.js",
+    "browser": "./dist/index.umd.min.js",
+    "typesVersions": {
+      "<5.0": {
+        "*": [
+          "*",
+          "./dist/*",
+          "./dist/*/index.esm.d.ts"
+        ]
+      }
     }
   },
-  "homepage": "https://github.com/NWYLZW/shikitor/blob/master/packages/react/README.md",
+  "homepage": "https://github.com/oneworks-ai/shikitor/blob/master/packages/react/README.md",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NWYLZW/shikitor",
+    "url": "https://github.com/oneworks-ai/shikitor.git",
     "directory": "packages/react"
   },
-  "bugs": "https://github.com/NWYLZW/shikitor/issues/new?template=bug_report.yml&labels=bug,scope:@shikitor/react",
+  "bugs": "https://github.com/oneworks-ai/shikitor/issues",
   "peerDependencies": {
     "react": "^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
   },

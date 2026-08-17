@@ -7,5 +7,11 @@
     "declaration": true,
     "stripInternal": true
   },
+  "include": [
+    "packages/core/src/**/*.ts",
+    "packages/core/src/**/*.tsx",
+    "packages/react/src/**/*.ts",
+    "packages/react/src/**/*.tsx"
+  ],
   "exclude": ["**/tests", "**/dist"]
 }

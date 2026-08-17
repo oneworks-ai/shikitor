@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../playground/public/favicon.svg" width="256" alt="Shikitor Logo">
+  <img src="./assets/logo.svg" width="256" alt="Shikitor Logo">
 </p>
 
 <h1 align="center">dsh-shikitor</h1>
@@ -9,6 +9,15 @@
 为 DeepSeek Harness Web 客户端提供 Shikitor 编辑器和消息发送器集成。
 
 | [en-US](./README.md) | 中文 |
+
+## 安装
+
+需要 DeepSeek Harness 0.1.0-rc.5 或更高版本，且属于 0.1 版本线
+（`<0.2.0`）。
+
+```bash
+dsh plugin --profile web add dsh-shikitor
+```
 
 ## 预览
 
@@ -90,6 +99,7 @@ Skill 发现覆盖 `<projectRoot>/{.agents,.codex,.claude,.oo}/skills`，以及�
 ## 注册表面插件
 
 ```ts
+import type {} from 'dsh-shikitor/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import mySenderPlugin from './my-sender-plugin.ts'
 

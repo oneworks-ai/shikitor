@@ -1,6 +1,7 @@
 {
   "private": true,
   "name": "standard",
+  "version": "1.0.0",
   "bin": {
     "dprint": "./node_modules/.bin/dprint"
   },

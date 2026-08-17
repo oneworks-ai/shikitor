@@ -1,16 +1,19 @@
 {
   "name": "@shikitor/core",
-  "version": "0.0.9",
+  "version": "1.0.0",
   "description": "Shikitor core",
+  "license": "MIT",
   "jiek": {
     "styled": true
   },
   "scripts": {
-    "build": "jiek build"
+    "build": "jiek --root ../.. --filter @shikitor/core build",
+    "prepack": "pnpm run build"
   },
   "exports": {
     ".": "./src/index.ts",
     "./input": "./src/input/index.ts",
+    "./plugin": "./src/plugin.ts",
     "./types": "./src/types.ts",
     "./utils": "./src/utils/index.ts",
     "./utils/valtio": "./src/utils/valtio/index.ts",
@@ -27,9 +30,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/NWYLZW/shikitor.git",
+    "url": "https://github.com/oneworks-ai/shikitor.git",
     "directory": "packages/core",
-    "homepage": "https://github.com/NWYLZW/shikitor/tree/master/packages/core"
+    "homepage": "https://github.com/oneworks-ai/shikitor/tree/master/packages/core"
   },
   "dependencies": {
     "@shikijs/core": "^4.4.3",
@@ -47,11 +50,68 @@
   },
   "files": [
     "dist",
+    ".resource",
+    "LICENSE",
     "README.md"
   ],
   "publishConfig": {
+    "access": "public",
     "exports": {
-      "./*.css": "./dist/*.css"
+      "./*.css": "./dist/*.css",
+      "./package.json": "./package.json",
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.esm.js",
+        "require": "./dist/index.umd.js"
+      },
+      "./input": {
+        "types": "./dist/input.d.ts",
+        "import": "./dist/input.esm.js",
+        "require": "./dist/input.umd.js"
+      },
+      "./plugin": {
+        "types": "./dist/plugin.d.ts",
+        "import": "./dist/plugin.esm.js",
+        "require": "./dist/plugin.umd.js"
+      },
+      "./types": {
+        "types": "./dist/types.d.ts",
+        "import": "./dist/types.esm.js",
+        "require": "./dist/types.umd.js"
+      },
+      "./utils": {
+        "types": "./dist/utils.d.ts",
+        "import": "./dist/utils.esm.js",
+        "require": "./dist/utils.umd.js"
+      },
+      "./utils/valtio": {
+        "types": "./dist/utils/valtio.d.ts",
+        "import": "./dist/utils/valtio.esm.js",
+        "require": "./dist/utils/valtio.umd.js"
+      },
+      "./workers/tokenization": {
+        "types": "./dist/workers/tokenization.d.ts",
+        "import": "./dist/workers/tokenization.esm.js",
+        "require": "./dist/workers/tokenization.umd.js"
+      },
+      "./plugins/*": {
+        "types": "./dist/plugins/*.d.ts",
+        "import": "./dist/plugins/*.esm.js",
+        "require": "./dist/plugins/*.umd.js"
+      }
+    },
+    "types": "./dist/index.d.ts",
+    "main": "./dist/index.umd.js",
+    "module": "./dist/index.esm.js",
+    "browser": "./dist/index.umd.min.js",
+    "typesVersions": {
+      "<5.0": {
+        "*": [
+          "*",
+          "./dist/*",
+          "./dist/*/index.esm.d.ts"
+        ]
+      }
     }
   }
 }

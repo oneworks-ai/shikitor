@@ -1,20 +1,42 @@
 {
   "name": "dsh-shikitor",
-  "version": "0.0.1",
-  "private": true,
+  "version": "1.0.0",
   "description": "Shikitor editor and sender surfaces for DeepSeek Harness",
+  "license": "MIT",
+  "homepage": "https://github.com/oneworks-ai/shikitor/tree/master/packages/dsh-shikitor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oneworks-ai/shikitor.git",
+    "directory": "packages/dsh-shikitor"
+  },
+  "bugs": "https://github.com/oneworks-ai/shikitor/issues",
+  "keywords": [
+    "cordis",
+    "deepseek-harness",
+    "editor",
+    "shiki",
+    "shikitor"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
   "type": "module",
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
-    "./client": "./dist/client.js",
+    "./client": {
+      "types": "./dist/types/client.d.ts",
+      "default": "./dist/client.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "cordis.patch.yml",
-    "dist/client.js",
-    "dist/client.js.map",
+    "dist",
+    "LICENSE",
+    "assets/logo.svg",
+    "assets/screenshots",
     "vendor/file-icons-js/LICENSE.md",
     "vendor/file-icons-js/UPSTREAM.md",
     "vendor/material-symbols-outlined/LICENSE",
@@ -40,17 +62,39 @@
   "scripts": {
     "build": "tsdown",
     "build:dev": "tsdown --env.DSH_SHIKITOR_DEV true",
+    "prepack": "pnpm run build",
     "screenshots": "node ./scripts/capture-screenshots.mjs",
     "screenshots:install": "playwright install chromium"
   },
-  "dependencies": {
-    "@deepseek-ai/dsh-atomic-write": "link:../../vendors/deepseek-ai/deepseek-harness/packages/util/atomic-write",
-    "@deepseek-ai/dsh-agent": "link:../../vendors/deepseek-ai/deepseek-harness/packages/core/agent",
-    "@deepseek-ai/dsh-llm": "link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm",
-    "@deepseek-ai/dsh-skill-filesystem": "link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem"
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-atomic-write": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-llm": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.1.0-rc.5 <0.2.0",
+    "@shikitor/core": "^1.0.0",
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0",
+    "shiki": ">=1.12.1 <5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh-client-runtime": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
+    "@deepseek-ai/dsh-atomic-write": { "optional": true },
+    "@deepseek-ai/dsh-llm": { "optional": true },
+    "@deepseek-ai/dsh-skill-filesystem": { "optional": true },
+    "@deepseek-ai/dsh-typert-protocol": { "optional": true },
+    "@shikitor/core": { "optional": true },
+    "react": { "optional": true },
+    "react-dom": { "optional": true },
+    "shiki": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "link:../../vendors/deepseek-ai/deepseek-harness/vendor/cordis",
+    "@deepseek-ai/dsh-atomic-write": "link:../../vendors/deepseek-ai/deepseek-harness/packages/util/atomic-write",
     "@deepseek-ai/dsh-api-remotes": "link:../../vendors/deepseek-ai/deepseek-harness/packages/api/remotes",
     "@deepseek-ai/dsh-client-locale": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/locale",
     "@deepseek-ai/dsh-client-runtime": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/runtime",
@@ -60,6 +104,8 @@
     "@deepseek-ai/dsh-client-ui-settings": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-settings",
     "@deepseek-ai/dsh-client-ui-slots": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-slots",
     "@deepseek-ai/dsh-client-ui-theme": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-theme",
+    "@deepseek-ai/dsh-llm": "link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm",
+    "@deepseek-ai/dsh-skill-filesystem": "link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem",
     "@deepseek-ai/dsh-typert-protocol": "link:../../vendors/deepseek-ai/deepseek-harness/packages/typert/protocol",
     "@shikitor/core": "workspace:^",
     "@shikitor/react": "workspace:^",
@@ -69,5 +115,8 @@
     "sass": "^1.90.0",
     "shiki": "^1.12.1",
     "tsdown": "^0.22.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
