@@ -3,7 +3,7 @@
   padding: 0;
   min-width: 400px;
   max-height: 300px;
-  overflow-y: auto;
+  overflow: hidden;
   background-color: var(--shikitor-bg-color);
   color: var(--shikitor-fg-color);
   border: 1px solid var(--shikitor-fg-color);
@@ -14,8 +14,15 @@
 .shikitor-popup[class*='completions-board'] {
   display: flex;
   flex-direction: column;
+  .shikitor-completions__list {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
   .shikitor-completions__footer {
     display: flex;
+    flex: none;
     align-items: center;
     justify-content: space-between;
     padding: .25rem;

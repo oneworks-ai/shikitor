@@ -182,24 +182,87 @@ export function resolveVisualScrollLeft(
   return Number.isFinite(resolved) ? resolved : inputScrollLeft
 }
 
-export function initDom(target: HTMLElement) {
-  target.classList.add('shikitor')
-  target.innerHTML = ''
+export function initDom(mount: HTMLElement) {
+  const attached = mount instanceof HTMLTextAreaElement
+  const input = attached ? mount : document.createElement('textarea')
+  const target = attached ? document.createElement('div') : mount
+  const parent = attached ? input.parentElement : null
+  if (attached && parent === null) {
+    throw new Error('Shikitor cannot attach to a textarea without a parent element')
+  }
 
-  const input = document.createElement('textarea')
+  const inputClass = attached ? 'shikitor-input--attached' : 'shikitor-input'
+  const hadInputClass = input.classList.contains(inputClass)
+  const parentPosition = parent?.style.position
+  const changedParentPosition = parent !== null && getComputedStyle(parent).position === 'static'
+  if (changedParentPosition && parent !== null) parent.style.position = 'relative'
+
+  target.classList.add('shikitor')
+  let resizeObserver: ResizeObserver | undefined
+  const syncAttachedLayout = () => {
+    target.style.inset = 'auto'
+    target.style.top = `${input.offsetTop}px`
+    target.style.left = `${input.offsetLeft}px`
+    target.style.width = `${input.offsetWidth}px`
+    target.style.height = `${input.offsetHeight}px`
+  }
+  if (attached) {
+    const inputStyle = getComputedStyle(input)
+    target.classList.add('shikitor--attached')
+    target.style.boxSizing = 'border-box'
+    target.style.padding = inputStyle.padding
+    target.style.borderStyle = 'solid'
+    target.style.borderWidth = inputStyle.borderWidth
+    target.style.borderColor = 'transparent'
+    target.style.fontFamily = inputStyle.fontFamily
+    target.style.fontSize = inputStyle.fontSize
+    target.style.fontWeight = inputStyle.fontWeight
+    target.style.fontStyle = inputStyle.fontStyle
+    target.style.letterSpacing = inputStyle.letterSpacing
+    target.style.wordSpacing = inputStyle.wordSpacing
+    target.style.textAlign = inputStyle.textAlign
+    target.style.textTransform = inputStyle.textTransform
+    target.style.direction = inputStyle.direction
+    target.style.setProperty('--font-family', inputStyle.fontFamily)
+    target.style.setProperty('--line-height', inputStyle.lineHeight)
+    target.style.setProperty('--shikitor-white-space', inputStyle.whiteSpace)
+    target.style.setProperty('--shikitor-word-break', inputStyle.wordBreak)
+    target.style.setProperty('--shikitor-overflow-wrap', inputStyle.overflowWrap)
+    input.before(target)
+    syncAttachedLayout()
+    if (typeof ResizeObserver !== 'undefined' && parent !== null) {
+      resizeObserver = new ResizeObserver(syncAttachedLayout)
+      resizeObserver.observe(input)
+      resizeObserver.observe(parent)
+    }
+  } else {
+    target.innerHTML = ''
+  }
+
   const output = document.createElement('div')
   const placeholder = document.createElement('div')
 
-  input.classList.add('shikitor-input')
-  input.setAttribute('autocapitalize', 'off')
-  input.setAttribute('autocomplete', 'off')
-  input.setAttribute('autocorrect', 'off')
-  input.setAttribute('spellcheck', 'false')
-  input.setAttribute('wrap', 'off')
+  input.classList.add(inputClass)
+  if (!attached) {
+    input.setAttribute('autocapitalize', 'off')
+    input.setAttribute('autocomplete', 'off')
+    input.setAttribute('autocorrect', 'off')
+    input.setAttribute('spellcheck', 'false')
+    input.setAttribute('wrap', 'off')
+  }
 
   output.classList.add('shikitor-output')
-  input.addEventListener('scroll', () => {
-    setTimeout(() => {
+  output.setAttribute('aria-hidden', 'true')
+  const timers = new Set<ReturnType<typeof setTimeout>>()
+  const defer = (callback: () => void) => {
+    const timer = setTimeout(() => {
+      timers.delete(timer)
+      callback()
+    }, 10)
+    timers.add(timer)
+  }
+  const onScroll = () => {
+    defer(() => {
       const scrollLeft = resolveVisualScrollLeft(
         input.scrollLeft,
         target.style.getPropertyValue(cssvar('visual-scroll-l'))
@@ -212,9 +275,9 @@ export function initDom(target: HTMLElement) {
       output.scrollTop = input.scrollTop
       output.scrollLeft = scrollLeft
       lines.style.marginTop = `-${input.scrollTop}px`
-    }, 10)
-  })
-  input.addEventListener('keydown', e => {
+    })
+  }
+  const onKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && !isMultipleKey(e)) {
       if (input.selectionStart !== input.selectionEnd) {
         e.preventDefault()
@@ -228,15 +291,17 @@ export function initDom(target: HTMLElement) {
     if (isWhatBrowser('chrome')) {
       if (['Backspace', 'Delete', 'Enter'].includes(e.key) && !isMultipleKey(e)) {
         const s = { start: input.selectionStart, end: input.selectionEnd }
-        setTimeout(() => {
+        defer(() => {
           if (s.start !== input.selectionStart || s.end !== input.selectionEnd) {
             input.setSelectionRange(input.selectionStart, input.selectionEnd)
             document.dispatchEvent(new Event('selectionchange'))
           }
-        }, 10)
+        })
       }
     }
-  })
+  }
+  input.addEventListener('scroll', onScroll)
+  input.addEventListener('keydown', onKeydown)
 
   placeholder.classList.add('shikitor-placeholder')
 
@@ -254,19 +319,36 @@ export function initDom(target: HTMLElement) {
 
   const container = document.createElement('div')
   container.classList.add('shikitor-container')
-  container.append(
-    output,
-    placeholder,
-    input,
-    cursors
-  )
+  container.append(output, placeholder)
+  if (!attached) container.append(input)
+  container.append(cursors)
   target.append(lines, container)
-  return [
+  return {
+    attached,
+    target,
     input,
     output,
     placeholder,
-    lines
-  ] as const
+    lines,
+    dispose() {
+      input.removeEventListener('scroll', onScroll)
+      input.removeEventListener('keydown', onKeydown)
+      resizeObserver?.disconnect()
+      timers.forEach(timer => clearTimeout(timer))
+      timers.clear()
+      if (!attached) {
+        target.innerHTML = ''
+        return
+      }
+      target.remove()
+      if (!hadInputClass) input.classList.remove(inputClass)
+      if (
+        changedParentPosition
+        && parent !== null
+        && parent.style.position === 'relative'
+      ) parent.style.position = parentPosition ?? ''
+    }
+  }
 }
 
 export function outputRenderControlled(

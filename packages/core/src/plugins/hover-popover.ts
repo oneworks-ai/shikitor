@@ -183,7 +183,7 @@ export default definePlugin({
 
     const subscription = ctx.shikitorPointer.subscribe(handlePointer)
     const handleViewportChange = () => closePopover()
-    const input = root.querySelector<HTMLTextAreaElement>('textarea.shikitor-input')
+    const input = editor.inputElement
     window?.addEventListener('resize', handleViewportChange)
     input?.addEventListener('scroll', handleViewportChange)
 

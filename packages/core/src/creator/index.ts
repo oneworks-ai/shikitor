@@ -24,7 +24,7 @@ export interface CreateOptions {
 }
 
 export async function create(
-  target: HTMLElement,
+  mount: HTMLElement,
   inputOptions: ShikitorOptions = {},
   options: CreateOptions = {}
 ): Promise<Shikitor> {
@@ -67,7 +67,9 @@ export async function create(
   await new Promise(resolve => setTimeout(resolve, 0))
   checkAborted()
 
-  const [input, output, placeholder, lines] = initDom(target)
+  const dom = initDom(mount)
+  const { target, input, output, placeholder, lines } = dom
+  disposes.push(dom.dispose)
   const listenInput = <K extends keyof HTMLElementEventMap>(
     type: K,
     listener: (event: HTMLElementEventMap[K]) => void,
@@ -80,6 +82,7 @@ export async function create(
   const optionsRef = proxy({
     current: {
       ...inputOptions,
+      value: inputOptions.value ?? (dom.attached ? input.value : undefined),
       plugins: inputOptions.plugins ?? []
     }
   })
@@ -163,15 +166,13 @@ export async function create(
   disposes.push(listen(document, 'selectionchange', e => {
     if (!shikitor) return
     const { focusNode } = document.getSelection() ?? {}
+    const belongsToEditor = (node: EventTarget | null | undefined) =>
+      node === input
+      || (node instanceof HTMLElement && node.closest(`.${'shikitor'}`) === target)
     if (
-      (
-        !(focusNode instanceof HTMLElement)
-        || focusNode.closest(`.${'shikitor'}`) !== target
-      )
-      && (
-        !(e.target instanceof HTMLElement)
-        || e.target.closest(`.${'shikitor'}`) !== target
-      )
+      document.activeElement !== input
+      && !belongsToEditor(focusNode)
+      && !belongsToEditor(e.target)
     ) return
 
     const { resolvePosition } = shikitor.rawTextHelper
@@ -213,7 +214,21 @@ export async function create(
         overflow-wrap: break-word;
       `
       const style = getComputedStyle(input)
-      ;['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'textTransform', 'letterSpacing'].forEach(
+      ;[
+        'fontFamily',
+        'fontSize',
+        'fontWeight',
+        'fontStyle',
+        'fontVariant',
+        'fontStretch',
+        'fontKerning',
+        'fontFeatureSettings',
+        'fontVariationSettings',
+        'lineHeight',
+        'textTransform',
+        'letterSpacing',
+        'wordSpacing'
+      ].forEach(
         prop => {
           // @ts-ignore
           span.style[prop] = style[prop]
@@ -228,8 +243,17 @@ export async function create(
       const rect = span.getBoundingClientRect()
       document.body.removeChild(span)
       const inputStyle = getComputedStyle(input)
-      const left = parseInt(inputStyle.marginLeft) + parseInt(inputStyle.paddingLeft)
-      const top = parseInt(inputStyle.marginTop) + parseInt(inputStyle.paddingTop)
+      // An attached editor copies the host textarea's border and padding onto
+      // the rendering root, so its container origin is already the textarea's
+      // content origin. Adding the textarea inset again makes the cursor jump
+      // after the first selection update (the initial pre-editor render uses
+      // 0,0 and masks the error until then).
+      const left = dom.attached
+        ? 0
+        : parseInt(inputStyle.marginLeft) + parseInt(inputStyle.paddingLeft)
+      const top = dom.attached
+        ? 0
+        : parseInt(inputStyle.marginTop) + parseInt(inputStyle.paddingTop)
       return {
         x: (
           inTheLineStart ? 0 : rect.right
@@ -242,13 +266,15 @@ export async function create(
   }
   const shikitorDisposable: Disposable = {
     [Symbol.dispose]() {
-      target.innerHTML = ''
       dispose()
     }
   }
   const shikitorBase: ShikitorBase = {
     get element() {
       return target
+    },
+    get inputElement() {
+      return input
     },
     get input() {
       if (!inputService) throw new Error('Shikitor input service is not ready')
@@ -360,7 +386,13 @@ export async function create(
       const resolvedStart = resolvePosition(start)
       const resolvedEnd = resolvePosition(end)
       input.setRangeText(text, resolvedStart.offset, resolvedEnd.offset, 'end')
-      input.dispatchEvent(new Event('input'))
+      input.dispatchEvent(typeof InputEvent === 'undefined'
+        ? new Event('input', { bubbles: true })
+        : new InputEvent('input', {
+            bubbles: true,
+            data: text,
+            inputType: 'insertText'
+          }))
       const defer = Promise.withResolvers<void>()
       const dispose = scopeWatch(get => {
         // noinspection BadExpressionStatementJS

@@ -56,8 +56,15 @@ export enum CompletionItemKind {
  */
 export type CompletionItemIconRenderer = () => Node | null | undefined
 
+export interface CompletionRequest {
+  readonly triggerCharacter: string
+  readonly query: string
+}
+
 export interface CompletionItemInner {
   label: string
+  /** Text used for filtering when it differs from the displayed label. */
+  filterText?: string
   kind?: CompletionItemKind
   /**
    * Override the icon inferred from {@link kind}. When the renderer returns no
@@ -68,6 +75,12 @@ export interface CompletionItemInner {
   documentation?: string
   range: TextRange
   insertText: string
+  /**
+   * Run a host-owned acceptance path instead of applying {@link insertText}.
+   * Return `true` when the host handled the selection; any other result keeps
+   * the ordinary text replacement behavior.
+   */
+  onAccept?: () => boolean | void
   /**
    * @internal
    */
@@ -86,11 +99,16 @@ declare module '@shikitor/core' {
      */
     provideCompletionItems(
       rawTextHelper: RawTextHelper,
-      position: ResolvedPosition
+      position: ResolvedPosition,
+      request: CompletionRequest
     ): ProviderResult<CompletionList>
   }
   export interface ShikitorProvideCompletions {
     registerCompletionItemProvider: (selector: LanguageSelector, provider: CompletionItemProvider) => IDisposable
+    /** Open the completion surface without requiring a typed trigger character. */
+    show: (triggerCharacter: string) => boolean
+    /** Close the active completion surface, if any. */
+    hide: () => void
   }
 }
 
@@ -115,15 +133,34 @@ function splitKeywords(keyword: string) {
     .map(s => s.toLowerCase())
 }
 
+function escapeHTML(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function highlightingKeyword(text: string, keywordParts: string[]) {
   const { prefix } = completionItemTemplate
-  return keywordParts.reduce((prev, keyword) => {
-    const index = prev.toLowerCase().indexOf(keyword)
-    if (index === -1) return prev
-    return prev.slice(0, index)
-      + `<span class="${prefix}__keyword">${keyword}</span>`
-      + prev.slice(index + keyword.length)
-  }, text)
+  const highlighted = Array.from({ length: text.length }, () => false)
+  const lowerText = text.toLocaleLowerCase()
+  for (const keyword of keywordParts) {
+    const index = lowerText.indexOf(keyword.toLocaleLowerCase())
+    if (index === -1) continue
+    for (let offset = index; offset < index + keyword.length; offset++) highlighted[offset] = true
+  }
+  let result = ''
+  for (let start = 0; start < text.length;) {
+    const marked = highlighted[start]
+    let end = start + 1
+    while (end < text.length && highlighted[end] === marked) end++
+    const content = escapeHTML(text.slice(start, end))
+    result += marked ? `<span class="${prefix}__keyword">${content}</span>` : content
+    start = end
+  }
+  return result
 }
 
 function completionItemTemplate(
@@ -138,8 +175,8 @@ function completionItemTemplate(
     <div class="${classnames(prefix, selectedIndex === index && 'selected')}" data-index="${index}">
       <div class="${prefix}__kind">${kind}</div>
       <div class="${prefix}__label">${highlightingKeyword(item.label, keywordParts)}</div>
-      ${item.detail ? `<div class="${prefix}__detail">${item.detail}</div>` : ''}
-      ${item.documentation ? `<div class="${prefix}__documentation">${item.documentation}</div>` : ''}
+      ${item.detail ? `<div class="${prefix}__detail">${escapeHTML(item.detail)}</div>` : ''}
+      ${item.documentation ? `<div class="${prefix}__documentation">${escapeHTML(item.documentation)}</div>` : ''}
     </div>
   `
 }
@@ -207,6 +244,7 @@ export default definePlugin({
     offset: undefined as number | undefined
   })
   const allTriggerCharacters = proxy<string[]>([])
+  let lastReconciledValue = ctx.shikitor.value
 
   const completions = proxy<CompletionItemInner[]>([])
   const resolvedCompletions = derive({
@@ -236,15 +274,15 @@ export default definePlugin({
     const keywordStr = keyword === -1 ? '' : keyword ?? ''
     const innerCompletionItemTemplate = completionItemTemplate.bind(null, splitKeywords(keywordStr), selected)
     const completionsContent = completionsSnapshot.length === 0
-      ? options.emptyText ?? 'No completions available'
+      ? `<div class="${'shikitor'}-completions__empty">${escapeHTML(options.emptyText ?? 'No completions available')}</div>`
       : completionsSnapshot.map(innerCompletionItemTemplate).join('')
     const {
       footer = true,
       tooltip = true
     } = options
     const tooltipStr = tooltip === true
-      ? 'Press <kbd>↑</kbd> <kbd>↓</kbd> to navigate, <kbd>↵</kbd> to select'
-      : (tooltip || '')
+      ? 'Press <kbd>↑</kbd> <kbd>↓</kbd> to navigate, <kbd>↵</kbd>/<kbd>Tab</kbd> to select'
+      : escapeHTML(tooltip || '')
     const footerStr = footer
       ? `<div class="${'shikitor'}-completions__footer">
             <div class="${'shikitor'}-completions__tooltip">${tooltipStr}</div>
@@ -254,9 +292,20 @@ export default definePlugin({
           </div>`
       : ''
     element.innerHTML = `
-      ${completionsContent}
+      <div class="${'shikitor'}-completions__list">
+        ${completionsContent}
+      </div>
       ${footerStr}
     `
+    const completionListElement = element.querySelector<HTMLElement>(
+      `.${'shikitor'}-completions__list`
+    )
+    completionListElement?.addEventListener('wheel', event => {
+      // The popup owns its scroll gesture. Embedded hosts commonly forward
+      // wheel events from their editor scrollport and may prevent the list's
+      // native scrolling when the event reaches that outer boundary.
+      event.stopPropagation()
+    }, { passive: true })
     const completionElements = element.querySelectorAll<HTMLElement>(`.${completionItemTemplate.prefix}`)
     completions.forEach((completion, index) => {
       const renderIcon = completion.renderIcon
@@ -270,12 +319,10 @@ export default definePlugin({
     })
   })
 
-  const displayRef = derive({
-    current: get => get(resolvedCompletions).current.length > 0
-  })
   const displayDeps = derive({
     element: get => get(elementRef).current,
-    display: get => get(displayRef).current
+    display: get => get(triggerCharacter).current !== undefined
+      && get(keywordRef).current !== -1
   })
   scopeSubscribe(displayDeps, () => {
     const {
@@ -303,14 +350,29 @@ export default definePlugin({
     } = selectIndexDeps
     if (isUnset(element)) return
 
-    const items = element.querySelectorAll(`.${'shikitor'}-completion-item`)
+    const items = element.querySelectorAll<HTMLElement>(`.${'shikitor'}-completion-item`)
+    let selectedItem: HTMLElement | undefined
     items.forEach((item, index) => {
       if (index === selectIndex) {
         item.classList.add('selected')
+        selectedItem = item
       } else {
         item.classList.remove('selected')
       }
     })
+    const list = element.querySelector<HTMLElement>(`.${'shikitor'}-completions__list`)
+    if (selectedItem && list) {
+      const itemRect = selectedItem.getBoundingClientRect()
+      const listRect = list.getBoundingClientRect()
+      const listStyle = getComputedStyle(list)
+      const visibleTop = listRect.top + (Number.parseFloat(listStyle.paddingTop) || 0)
+      const visibleBottom = listRect.bottom - (Number.parseFloat(listStyle.paddingBottom) || 0)
+      if (itemRect.top < visibleTop) {
+        list.scrollTop += itemRect.top - visibleTop
+      } else if (itemRect.bottom > visibleBottom) {
+        list.scrollTop += itemRect.bottom - visibleBottom
+      }
+    }
   })
 
   const resetSelectIndexWhenResolvedCompletionsChangeDeps = derive({
@@ -327,16 +389,35 @@ export default definePlugin({
     triggerCharacter.offset = undefined
   }
 
+  function activateTrigger(char: string, offset: number, keyword = '') {
+    keywordRef.current = keyword
+    triggerCharacter.current = char
+    triggerCharacter.offset = offset
+  }
+
   function closeCompletions() {
     resetTriggerCharacter()
     keywordRef.current = -1
     completions.length = 0
     selectIndexRef.current = 0
+    const element = elementRef.current
+    if (!isUnset(element)) element.style.visibility = 'hidden'
   }
 
   function acceptCompletion(shikitor: Shikitor) {
     const completion = snapshot(resolvedCompletions.current[selectIndexRef.current])
     if (completion) {
+      try {
+        const onAccept = completion.onAccept as CompletionItemInner['onAccept']
+        if (onAccept?.() === true) {
+          closeCompletions()
+          return true
+        }
+      } catch (error) {
+        console.error('[shikitor] completion acceptance failed:', error)
+        closeCompletions()
+        return true
+      }
       const keyword = keywordRef.current === -1
         ? ''
         : keywordRef.current ?? ''
@@ -361,8 +442,34 @@ export default definePlugin({
     return false
   }
       const shikitor = ctx.shikitor
+      const inputElement = shikitor.inputElement
+      const onInput = (event: Event) => {
+        const inputEvent = event as InputEvent
+        const inputType = inputEvent.inputType
+        if (inputType && !inputType.startsWith('insert')) return
+        const offset = inputElement.selectionStart
+        const value = inputElement.value
+        const char = value[offset - 1]
+        if (char && allTriggerCharacters.includes(char)) {
+          if (!inputEvent.data || inputEvent.data.endsWith(char)) activateTrigger(char, offset)
+          return
+        }
+        if (triggerCharacter.current !== undefined) return
+        // Controlled hosts may restore a draft between delete and retype, so
+        // reinserting the same trigger can be a DOM no-op with no trigger
+        // event. Recover its ownership from the live token on the next input.
+        for (let triggerIndex = offset - 1; triggerIndex >= 0; triggerIndex--) {
+          const candidate = value[triggerIndex]
+          if (candidate === undefined || /\s/u.test(candidate)) break
+          if (!allTriggerCharacters.includes(candidate)) continue
+          const triggerEnd = triggerIndex + 1
+          activateTrigger(candidate, triggerEnd, value.slice(triggerEnd, offset))
+          return
+        }
+      }
+      inputElement.addEventListener('input', onInput)
       const { optionsRef } = shikitor
-      const input = shikitor.element.querySelector('.shikitor-input') as HTMLTextAreaElement
+      const input = inputElement
       const cursorRef = derive({
         current: get => get(optionsRef).current.cursor
       })
@@ -383,29 +490,50 @@ export default definePlugin({
       }
       input.addEventListener('input', syncKeywordFromInput)
       ctx.provide('shikitorCompletions', {
+        show(char) {
+          if (!allTriggerCharacters.includes(char)) return false
+          activateTrigger(char, shikitor.inputElement.selectionStart)
+          return true
+        },
+        hide() {
+          closeCompletions()
+        },
         registerCompletionItemProvider(selector, provider) {
           let providerDispose: (() => void) | undefined
+          let requestVersion = 0
           const { triggerCharacters, provideCompletionItems } = provider
 
           const completionSymbol = Symbol('completion')
-          const start = allTriggerCharacters.length
-          const end = allTriggerCharacters.push(...triggerCharacters ?? [])
+          const registeredTriggerCharacters = [...triggerCharacters ?? []]
+          allTriggerCharacters.push(...registeredTriggerCharacters)
           const disposeWatcher = scopeWatch(async get => {
+            const version = ++requestVersion
             const char = get(triggerCharacter).current
+            const keyword = get(keywordRef).current
             const language = get(languageRef).current
             if (selector !== '*' && selector !== language) return
 
             const cursor = cursorRef.current
             if (cursor === undefined) return
-            const position = shikitor.rawTextHelper.resolvePosition(cursor)
+            const position = shikitor.rawTextHelper.resolvePosition(
+              shikitor.inputElement.selectionStart
+            )
             let suggestions: CompletionItemInner[] = []
             if (char && triggerCharacters?.includes(char)) {
               const { rawTextHelper } = shikitor
               providerDispose?.()
               const { suggestions: newSugs = [], dispose } = await provideCompletionItems(
                 rawTextHelper,
-                position
+                position,
+                {
+                  triggerCharacter: char,
+                  query: keyword === -1 ? '' : keyword ?? '',
+                }
               ) ?? {}
+              if (version !== requestVersion) {
+                dispose?.()
+                return
+              }
               suggestions = newSugs
               providerDispose = dispose
             }
@@ -430,9 +558,13 @@ export default definePlugin({
           })
           return {
             dispose() {
+              requestVersion++
               disposeWatcher()
               providerDispose?.()
-              allTriggerCharacters.splice(start, end - start)
+              for (const char of registeredTriggerCharacters) {
+                const index = allTriggerCharacters.indexOf(char)
+                if (index >= 0) allTriggerCharacters.splice(index, 1)
+              }
             }
           }
         }
@@ -475,29 +607,67 @@ export default definePlugin({
         closeCompletions()
         return
       }
+      const isPlainKey = !isMultipleKey(e)
+      const isModArrow = !e.altKey
+        && !e.shiftKey
+        && (e.metaKey || e.ctrlKey)
+        && !(e.metaKey && e.ctrlKey)
+        && ['ArrowUp', 'ArrowDown'].includes(e.key)
+      const isNavigationKey = isModArrow || (
+        isPlainKey
+        && ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)
+      )
+      const isAcceptKey = isPlainKey && ['Enter', 'Tab'].includes(e.key)
       if (
-        !isMultipleKey(e)
-        && displayRef.current
-        && ['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)
+        triggerCharacter.current !== undefined
+        && keywordRef.current !== -1
+        && (isNavigationKey || isAcceptKey)
       ) {
         e.preventDefault()
-        if ([e.key === 'ArrowUp', e.key === 'ArrowDown'].some(Boolean)) {
+        e.stopPropagation()
+        const completionCount = resolvedCompletions.current.length
+        if (completionCount === 0) return
+        if (isNavigationKey) {
           const selectIndex = selectIndexRef.current
+          if (e.key === 'Home' || (isModArrow && e.key === 'ArrowUp')) {
+            selectIndexRef.current = 0
+            return
+          }
+          if (e.key === 'End' || (isModArrow && e.key === 'ArrowDown')) {
+            selectIndexRef.current = completionCount - 1
+            return
+          }
+          if (e.key === 'PageUp' || e.key === 'PageDown') {
+            const element = elementRef.current
+            const list = isUnset(element)
+              ? undefined
+              : element.querySelector<HTMLElement>(`.${'shikitor'}-completions__list`)
+            const item = list?.querySelector<HTMLElement>(`.${completionItemTemplate.prefix}`)
+            const itemHeight = item?.getBoundingClientRect().height ?? 0
+            const pageSize = Math.max(
+              1,
+              itemHeight > 0 ? Math.floor((list?.clientHeight ?? 0) / itemHeight) : 1
+            )
+            const delta = e.key === 'PageUp' ? -pageSize : pageSize
+            selectIndexRef.current = Math.max(
+              0,
+              Math.min(completionCount - 1, selectIndex + delta)
+            )
+            return
+          }
           const delta = e.key === 'ArrowUp' ? -1 : 1
-          const deltaedIndex = selectIndex + delta
-          selectIndexRef.current = deltaedIndex < 0
-            ? completions.length - 1
-            : deltaedIndex % completions.length
+          const nextIndex = selectIndex + delta
+          selectIndexRef.current = nextIndex < 0
+            ? completionCount - 1
+            : nextIndex % completionCount
           return
         }
-        if (e.key === 'Enter' && acceptCompletion(shikitor)) return
+        if (isAcceptKey && acceptCompletion(shikitor)) return
         return
       }
       if (!isMultipleKey(e, false)) {
         if (allTriggerCharacters.includes(e.key)) {
-          keywordRef.current = ''
-          triggerCharacter.current = e.key
-          triggerCharacter.offset = shikitor.cursor.offset + 1
+          activateTrigger(e.key, shikitor.inputElement.selectionStart + 1)
           return
         }
         if (triggerCharacter.current) {
@@ -519,8 +689,40 @@ export default definePlugin({
         }
       }
       })
+      ctx.on('shikitor/change', value => {
+        // Programmatic draft replacement (host state restore, completion
+        // acceptance, external plugin edits) may not have a matching keydown.
+        // Reconcile the tracked token against the real value so a popup can
+        // never survive after its trigger was replaced. Valtio batches change
+        // notifications, so a controlled host may already have accepted a
+        // newer native edit by the time an older notification arrives.
+        if (value !== shikitor.inputElement.value) return
+        const cursor = shikitor.inputElement.selectionStart
+        const insertedText = resolveInsertedText(lastReconciledValue, value, cursor)
+        lastReconciledValue = value
+        const insertedTrigger = insertedText?.at(-1)
+        if (insertedTrigger && allTriggerCharacters.includes(insertedTrigger)) {
+          // Keydown is not guaranteed for IME, accessibility input, paste or
+          // controlled-host edits. The committed text diff is the universal
+          // fallback, while the cursor check prevents deletion from reopening.
+          activateTrigger(insertedTrigger, cursor)
+        }
+        const char = triggerCharacter.current
+        const triggerEnd = triggerCharacter.offset
+        if (char === undefined || triggerEnd === undefined) return
+        const keyword = value.slice(triggerEnd, cursor)
+        if (
+          value[triggerEnd - 1] !== char
+          || (cursor >= triggerEnd && /[\s\r\n]/.test(keyword))
+        ) {
+          closeCompletions()
+        } else if (keywordRef.current !== keyword) {
+          keywordRef.current = keyword
+        }
+      })
       return () => {
         input.removeEventListener('input', syncKeywordFromInput)
+        inputElement.removeEventListener('input', onInput)
         popupProviderDisposable.dispose?.()
         disposeProviderScope()
         disposeScoped()
@@ -543,6 +745,25 @@ export function resolveCompletionInputKeyword(
   return /[\r\n]/.test(keyword) ? undefined : keyword
 }
 
+function resolveInsertedText(previous: string, current: string, cursor: number) {
+  let start = 0
+  const sharedStart = Math.min(previous.length, current.length)
+  while (start < sharedStart && previous[start] === current[start]) start++
+
+  let previousEnd = previous.length
+  let currentEnd = current.length
+  while (
+    previousEnd > start
+    && currentEnd > start
+    && previous[previousEnd - 1] === current[currentEnd - 1]
+  ) {
+    previousEnd--
+    currentEnd--
+  }
+  if (cursor !== currentEnd || currentEnd <= start) return
+  return current.slice(start, currentEnd)
+}
+
 function calcNewKeyword(keyword: string, key: string, nextChar = '') {
   switch (key) {
     case 'ArrowRight':
@@ -560,5 +781,9 @@ function calcNewKeyword(keyword: string, key: string, nextChar = '') {
 function filterCompletions(completions: readonly RecursiveReadonly<CompletionItemInner>[], keyword?: string) {
   if (!keyword || keyword === '') return completions
 
-  return completions.filter(({ label }) => label.startsWith(keyword))
+  const keywordParts = splitKeywords(keyword)
+  return completions.filter(({ label, filterText }) => {
+    const normalized = (filterText ?? label).toLocaleLowerCase()
+    return keywordParts.every(part => normalized.includes(part))
+  })
 }

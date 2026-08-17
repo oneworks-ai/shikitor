@@ -10,6 +10,42 @@
   transition: .1s;
 
   overflow: hidden;
+  &--attached {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+
+    .shikitor-output-lines {
+      width: 100%;
+    }
+
+    .shikitor-output > pre,
+    .shikitor-output > pre > code,
+    .shikitor-output-line,
+    .shikitor-output-line * {
+      font-family: inherit !important;
+      font-size: inherit !important;
+      font-style: inherit !important;
+      font-variant: inherit !important;
+      font-weight: inherit !important;
+      font-stretch: inherit !important;
+      line-height: inherit !important;
+      letter-spacing: inherit !important;
+      word-spacing: inherit !important;
+    }
+
+    .shikitor-output-line {
+      white-space: var(--shikitor-white-space, pre);
+      word-break: var(--shikitor-word-break, normal);
+      overflow-wrap: var(--shikitor-overflow-wrap, normal);
+    }
+
+    > .shikitor-popup {
+      pointer-events: auto;
+    }
+  }
   &-bg-lighting {
     position: relative;
     &::before {
@@ -76,6 +112,11 @@
     overflow: auto;
     white-space: pre;
     line-height: var(--line-height);
+  }
+  &-input--attached {
+    color: transparent !important;
+    caret-color: transparent !important;
+    background-color: transparent !important;
   }
   &-output {
     height: 100%;
