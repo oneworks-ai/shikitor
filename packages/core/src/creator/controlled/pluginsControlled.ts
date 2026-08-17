@@ -12,6 +12,22 @@ function installPlugin(context: Context, input: InputShikitorPlugin) {
   return context.plugin(input as ShikitorPlugin)
 }
 
+/**
+ * Preserve the live plugin inputs when an options updater merely spreads the
+ * readonly options snapshot it received. Valtio snapshots clone tuple/array
+ * identities, so copying those values back would otherwise reinstall every
+ * plugin for unrelated updates such as cursor decorations.
+ */
+export function resolveUpdatedPluginInputs(
+  previous: InputShikitorPlugin[] | undefined,
+  next: readonly InputShikitorPlugin[] | undefined,
+  previousSnapshot: readonly InputShikitorPlugin[] | undefined,
+  provided: boolean
+): InputShikitorPlugin[] {
+  if (!provided || next === previousSnapshot) return previous ?? []
+  return [...next ?? []]
+}
+
 export function pluginsControlled(
   ref: RefObject<{ plugins?: InputShikitorPlugin[] }>,
   context: Context

@@ -17,7 +17,7 @@ import { scoped } from '../utils/valtio/scoped'
 import { cursorControlled } from './controlled/cursorControlled'
 import { inputBindingsControlled } from './controlled/inputBindingsControlled'
 import { initDom, outputRenderControlled } from './controlled/outputRenderControlled'
-import { pluginsControlled } from './controlled/pluginsControlled'
+import { pluginsControlled, resolveUpdatedPluginInputs } from './controlled/pluginsControlled'
 import { valueControlled } from './controlled/valueControlled'
 
 export interface CreateOptions {
@@ -296,11 +296,14 @@ export async function create(
       this.updateOptions(newOptions)
     },
     async updateOptions(newOptions) {
+      const previousOptions = this.options
+      const updatedOptions = callUpdateDispatcher(newOptions, previousOptions) ?? {}
+      const pluginsProvided = Object.prototype.hasOwnProperty.call(updatedOptions, 'plugins')
       const {
         cursor,
         plugins,
         ...resolvedOptions
-      } = callUpdateDispatcher(newOptions, this.options) ?? {}
+      } = updatedOptions
       let newCursor = optionsRef.current.cursor
       if (cursor !== undefined) {
         const { resolvePosition } = this.rawTextHelper
@@ -311,7 +314,12 @@ export async function create(
       optionsRef.current = {
         ...resolvedOptions,
         cursor: newCursor,
-        plugins: [...plugins ?? []]
+        plugins: resolveUpdatedPluginInputs(
+          optionsRef.current.plugins,
+          plugins,
+          previousOptions.plugins,
+          pluginsProvided
+        )
       }
     },
     get language() {

@@ -53,6 +53,7 @@ export interface ShikitorOptions extends ShikitorEvents {
   highlightCurrentLine?: boolean
   /**
    * Background color used to highlight the active line.
+   * @default the current theme foreground at 12% opacity
    */
   currentLineHighlightColor?: string
   /**

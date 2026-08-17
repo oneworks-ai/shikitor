@@ -1,4 +1,12 @@
 .shikitor--code-folding {
+  &.line-numbers > .shikitor-lines .shikitor-gutter-line {
+    min-width: calc(var(--shikitor-line-digit-count, 1ch) + 40px);
+  }
+
+  &:not(.line-numbers) > .shikitor-lines .shikitor-gutter-line {
+    min-width: 20px;
+  }
+
   .shikitor-input::selection {
     background: transparent;
   }
@@ -12,6 +20,13 @@
   .shikitor-output {
     z-index: 4;
     pointer-events: none;
+  }
+
+  .shikitor-output-lines {
+    // Keep enough trailing scroll space for the 2px custom caret and the
+    // visual scrollbar. Otherwise the last glyph can reach the edge while
+    // the caret itself remains clipped just outside the viewport.
+    padding-right: 24px;
   }
 
   .shikitor-gutter-line {
@@ -51,6 +66,13 @@
   }
 }
 
+.shikitor-gutter-decoration-slot.shikitor-fold-toggle-slot {
+  order: -2;
+  flex-basis: 16px;
+  width: 16px;
+  margin-left: 4px;
+}
+
 .shikitor-fold-toggle {
   display: grid;
   position: relative;
@@ -60,12 +82,13 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  margin-left: 4px;
+  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 4px;
   color: var(--shikitor-fg-color-op4, currentColor);
   background: transparent;
+  pointer-events: auto;
   cursor: pointer;
 
   &:hover {

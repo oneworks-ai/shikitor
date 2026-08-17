@@ -11,6 +11,7 @@ import {
   resolveVisualScrollLeft,
   selectRenderMode
 } from '../../src/creator/controlled/outputRenderControlled'
+import { resolveContentOffsetTop } from '../../src/creator/controlled/outputView'
 import { resolveVirtualLineRange } from '../../src/creator/controlled/virtualViewport'
 
 describe('output rendering', () => {
@@ -190,6 +191,15 @@ describe('output rendering', () => {
       start: 8
     })
     vi.unstubAllGlobals()
+  })
+
+  test('aligns less DOM current-line paint to the padded content origin', () => {
+    const input = {
+      parentElement: { offsetTop: 12 }
+    } as unknown as HTMLTextAreaElement
+
+    expect(resolveContentOffsetTop(input)).toBe(12)
+    expect(resolveContentOffsetTop({} as HTMLTextAreaElement)).toBe(0)
   })
 
   test('keeps the fallback on errors and after disposal', async () => {

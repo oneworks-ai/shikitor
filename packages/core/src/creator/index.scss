@@ -55,11 +55,17 @@
       content: '';
       position: absolute;
       z-index: 0;
-      top: var(--shikitor-current-line-top, 0);
+      top: calc(
+        var(--shikitor-content-offset-top, 0px) +
+        var(--shikitor-current-line-top, 0px)
+      );
       left: 0;
       width: 100%;
       height: var(--line-height);
-      background: var(--shikitor-current-line-color, var(--shikitor-fg-color-op7));
+      background: var(
+        --shikitor-current-line-color,
+        color-mix(in oklch, var(--shikitor-fg-color, currentcolor), transparent 88%)
+      );
       pointer-events: none;
     }
 
@@ -189,8 +195,14 @@
   &-gutter-line-highlighted,
   &-output-line-highlighted {
     background-image: linear-gradient(
-      var(--shikitor-current-line-color, var(--shikitor-fg-color-op7)),
-      var(--shikitor-current-line-color, var(--shikitor-fg-color-op7))
+      var(
+        --shikitor-current-line-color,
+        color-mix(in oklch, var(--shikitor-fg-color, currentcolor), transparent 88%)
+      ),
+      var(
+        --shikitor-current-line-color,
+        color-mix(in oklch, var(--shikitor-fg-color, currentcolor), transparent 88%)
+      )
     );
   }
   &-container {
@@ -262,8 +274,14 @@
   }
   &-cursors {
     position: absolute;
+    z-index: 10;
     width: 100%;
     height: 100%;
+    // The custom caret follows the full source coordinate even while the
+    // viewport is horizontally scrolled. Clip it at the code viewport edge so
+    // it cannot paint over the sibling gutter, while leaving enough vertical
+    // room for the cursor username label above the active line.
+    clip-path: inset(-20px 0);
     pointer-events: none;
     user-select: none;
   }
@@ -283,6 +301,9 @@
       --cursor-width: 1ch;
     }
     &#{&}--visible::after {
+      visibility: visible;
+    }
+    &#{&}--keyboard-reveal::after {
       visibility: visible;
     }
     &::after {

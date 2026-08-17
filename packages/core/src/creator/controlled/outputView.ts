@@ -4,6 +4,10 @@ import type { ResolvedCursor } from '../../editor'
 import { HIGHLIGHTED, OUTPUT_HIGHLIGHTED } from '../classes'
 import { resolveVirtualLineRange } from './virtualViewport'
 
+export function resolveContentOffsetTop(input: HTMLTextAreaElement) {
+  return input.parentElement?.offsetTop ?? 0
+}
+
 export function createOutputView({
   target,
   input,
@@ -21,10 +25,20 @@ export function createOutputView({
   let gutterLineCount = 0
   const gutterObserver = typeof ResizeObserver === 'undefined'
     ? undefined
-    : new ResizeObserver(scheduleGutterRender)
+    : new ResizeObserver(() => {
+        syncContentOffsetTop()
+        scheduleGutterRender()
+      })
 
   gutterObserver?.observe(input)
   input.addEventListener('scroll', scheduleGutterRender)
+
+  function syncContentOffsetTop() {
+    target.style.setProperty(
+      cssvar('content-offset-top'),
+      `${resolveContentOffsetTop(input)}px`
+    )
+  }
 
   function scheduleGutterRender() {
     cancelAnimationFrame(gutterFrame)
@@ -57,6 +71,7 @@ export function createOutputView({
   }
 
   function renderGutter(lineCount: number, useVirtualViewport: boolean) {
+    syncContentOffsetTop()
     if (!useVirtualViewport) {
       gutterLineCount = 0
       lines.classList.remove('shikitor-lines--compact', 'shikitor-lines--virtual')
@@ -112,6 +127,7 @@ export function createOutputView({
     cancelAnimationFrame(gutterFrame)
     gutterObserver?.disconnect()
     input.removeEventListener('scroll', scheduleGutterRender)
+    target.style.removeProperty(cssvar('content-offset-top'))
   }
 
   return { dispose, renderGutter, syncCurrentLineHighlight }
