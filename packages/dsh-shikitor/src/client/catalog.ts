@@ -1,4 +1,4 @@
-import type { ClientContext, ISessions, SessionId, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, ISessions, IWorkspaces, SessionId, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ConnectionHandle,
   DynamicCordisInventoryRow,
@@ -184,6 +184,7 @@ export class SenderCatalog {
   private readonly remote: ClientContext['remote']
   private readonly inputTriggers: InputTriggerServiceContract
   private readonly sessions: ISessions
+  private readonly workspaces: IWorkspaces
   private readonly shikitor: ShikitorService
   private readonly fileFetches = new Map<string, PendingCatalog<string>>()
   private readonly skillFetches = new Map<SessionId, PendingCatalog<SkillEntry>>()
@@ -195,6 +196,7 @@ export class SenderCatalog {
     this.remote = ctx.remote
     this.inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
     this.sessions = ctx.get('sessions') as ISessions
+    this.workspaces = ctx.get('workspaces') as IWorkspaces
     this.shikitor = shikitor
     ctx.on('connection/reset', () => { this.clear() })
   }
@@ -335,8 +337,9 @@ export class SenderCatalog {
     offset: number,
     limit: number,
   ): Promise<TriggerSuggestionPage> {
+    const catalogFiles = await this.files(sessionId)
     const files = filterAndSortWorkspaceFiles(
-      await this.files(sessionId),
+      catalogFiles,
       query,
       this.shikitor.preferences.getSnapshot().sender,
     )
@@ -354,13 +357,13 @@ export class SenderCatalog {
 
   /** Serialize one workspace file as a titled Markdown link with an absolute target. */
   fileLink(sessionId: SessionId, path: string): string {
-    const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    const cwd = this.sessionCwd(sessionId)
     return cwd === undefined ? path : markdownFileLink(cwd, path)
   }
 
   /** Resolve one catalog-relative file path against the session workspace. */
   workspaceFilePath(sessionId: SessionId, path: string): string {
-    const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    const cwd = this.sessionCwd(sessionId)
     return cwd === undefined ? path : absoluteFilePath(cwd, path)
   }
 
@@ -369,9 +372,14 @@ export class SenderCatalog {
     return this.files(sessionId)
   }
 
+  /** Resolve the workspace root even while a newly-created session summary is still hydrating. */
+  workspaceCwd(sessionId: SessionId): string | undefined {
+    return this.sessionCwd(sessionId)
+  }
+
   /** Drop the shared file snapshot after a workspace mutation. */
   invalidateWorkspaceFiles(sessionId: SessionId): void {
-    const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    const cwd = this.sessionCwd(sessionId)
     if (cwd !== undefined) this.fileFetches.delete(cwd)
   }
 
@@ -443,7 +451,7 @@ export class SenderCatalog {
   }
 
   private settledFiles(sessionId: SessionId): readonly string[] | undefined {
-    const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    const cwd = this.sessionCwd(sessionId)
     if (cwd === undefined) return undefined
     const files = this.fileFetches.get(cwd)?.settled?.value
     return files === undefined
@@ -465,7 +473,7 @@ export class SenderCatalog {
   }
 
   private files(sessionId: SessionId): Promise<readonly string[]> {
-    const cwd = this.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    const cwd = this.sessionCwd(sessionId)
     if (cwd === undefined) return Promise.resolve([])
     const existing = this.fileFetches.get(cwd)
     if (existing?.settled !== undefined && Date.now() - existing.settled.settledAt < CACHE_TTL_MS) {
@@ -493,6 +501,17 @@ export class SenderCatalog {
       () => { if (this.fileFetches.get(cwd) === fetch) this.fileFetches.delete(cwd) },
     )
     return promise
+  }
+
+  private sessionCwd(sessionId: SessionId): string | undefined {
+    const sessions = this.sessions.list.getSnapshot()
+    const direct = sessions.byId[sessionId]?.cwd
+    if (direct !== undefined) return direct
+    const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]?.cwd
+    if (current !== undefined) return current
+    const workspace = this.workspaces.list.getSnapshot().items.find(item => item.sessionIds.includes(sessionId))
+      ?? this.workspaces.list.getSnapshot().items[0]
+    return workspace?.path
   }
 
   private plugins(): Promise<readonly DynamicCordisInventoryRow[]> {

@@ -471,34 +471,35 @@ export default definePlugin({
       const inputElement = shikitor.inputElement
       const onInput = (event: Event) => {
         const inputEvent = event as InputEvent
-        const inputType = inputEvent.inputType
-        if (inputType && !inputType.startsWith('insert')) return
         const offset = inputElement.selectionStart
         const value = inputElement.value
         const char = value[offset - 1]
-        if (char && allTriggerCharacters.includes(char)) {
-          if (!inputEvent.data || inputEvent.data.endsWith(char)) activateTrigger(char, offset)
-          return
+        if (
+          char
+          && allTriggerCharacters.includes(char)
+          && (!inputEvent.data || inputEvent.data.endsWith(char))
+        ) {
+          activateTrigger(char, offset)
         }
-        if (triggerCharacter.current !== undefined) return
-        // Controlled hosts may restore a draft between delete and retype, so
-        // reinserting the same trigger can be a DOM no-op with no trigger
-        // event. Recover its ownership from the live token on the next input.
-        for (let triggerIndex = offset - 1; triggerIndex >= 0; triggerIndex--) {
-          const candidate = value[triggerIndex]
-          if (candidate === undefined || /\s/u.test(candidate)) break
-          if (!allTriggerCharacters.includes(candidate)) continue
-          const triggerEnd = triggerIndex + 1
-          activateTrigger(candidate, triggerEnd, value.slice(triggerEnd, offset))
-          return
+        if (triggerCharacter.current === undefined) {
+          // Controlled hosts may restore a draft between delete and retype, so
+          // recover ownership from the live token even when no keydown fired.
+          for (let triggerIndex = offset - 1; triggerIndex >= 0; triggerIndex--) {
+            const candidate = value[triggerIndex]
+            if (candidate === undefined || /\s/u.test(candidate)) break
+            if (!allTriggerCharacters.includes(candidate)) continue
+            const triggerEnd = triggerIndex + 1
+            activateTrigger(candidate, triggerEnd, value.slice(triggerEnd, offset))
+            break
+          }
+        }
+        if (triggerCharacter.current !== undefined) {
+          syncKeywordFromInput()
         }
       }
       inputElement.addEventListener('input', onInput)
       const { optionsRef } = shikitor
       const input = inputElement
-      const cursorRef = derive({
-        current: get => get(optionsRef).current.cursor
-      })
       const languageRef = derive({
         current: get => get(optionsRef).current.language
       })
@@ -585,8 +586,6 @@ export default definePlugin({
             const language = get(languageRef).current
             if (selector !== '*' && selector !== language) return
 
-            const cursor = cursorRef.current
-            if (cursor === undefined) return
             const position = shikitor.rawTextHelper.resolvePosition(
               shikitor.inputElement.selectionStart
             )

@@ -64,6 +64,12 @@ export function cursorControlled(
   input.addEventListener('focus', startCursorBlink)
   input.addEventListener('blur', stopCursorBlink)
 
+  // An attached host textarea may already be focused before Shikitor mounts,
+  // so the focus listener is not guaranteed to run. Seed the controlled
+  // cursor from the live selection to keep cursor-relative popups anchored.
+  if (ref.current.cursor === undefined) {
+    ref.current.cursor = input.selectionStart
+  }
   startCursorBlink()
   return {
     cursorRef,

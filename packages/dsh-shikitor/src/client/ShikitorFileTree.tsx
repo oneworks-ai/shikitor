@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { presentFileIcon, type ShikitorFileIconRule } from './fileIcons.ts'
+import { MaterialIcon } from './MaterialIcon.tsx'
 import type {
   ShikitorFileIconMode,
   ShikitorService,
@@ -167,12 +168,8 @@ function TreeNodes({
           title={node.path}
           onClick={() => { onToggleDirectory(node.path) }}
         >
-          <span className="shikitor-icon dsh-shikitor-file-tree__disclosure" aria-hidden="true">
-            chevron_right
-          </span>
-          <span className="shikitor-icon dsh-shikitor-file-tree__folder" aria-hidden="true">
-            {open ? 'folder_open' : 'folder'}
-          </span>
+          <MaterialIcon name="chevron_right" className="dsh-shikitor-file-tree__disclosure" />
+          <MaterialIcon name={open ? 'folder_open' : 'folder'} className="dsh-shikitor-file-tree__folder" />
           <span className="dsh-shikitor-file-tree__name">{node.name}</span>
         </button>
         {open && (

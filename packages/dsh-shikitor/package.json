@@ -1,6 +1,6 @@
 {
   "name": "dsh-shikitor",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shikitor editor and sender surfaces for DeepSeek Harness",
   "license": "MIT",
   "homepage": "https://github.com/oneworks-ai/shikitor/tree/master/packages/dsh-shikitor",
@@ -80,17 +80,39 @@
     "shiki": ">=1.12.1 <5.0.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/cordis": { "optional": true },
-    "@deepseek-ai/dsh-client-runtime": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
-    "@deepseek-ai/dsh-atomic-write": { "optional": true },
-    "@deepseek-ai/dsh-llm": { "optional": true },
-    "@deepseek-ai/dsh-skill-filesystem": { "optional": true },
-    "@deepseek-ai/dsh-typert-protocol": { "optional": true },
-    "@shikitor/core": { "optional": true },
-    "react": { "optional": true },
-    "react-dom": { "optional": true },
-    "shiki": { "optional": true }
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-runtime": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-atomic-write": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill-filesystem": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    },
+    "@shikitor/core": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "shiki": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "link:../../vendors/deepseek-ai/deepseek-harness/vendor/cordis",

@@ -16,6 +16,16 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Material Symbols is intentionally not used as a runtime font: some DSH
+   hosts block data-font loading, which leaves ligature names visible. */
+.dsh-shikitor-material-icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  fill: currentColor;
+}
+
 .shikitor-popup-selection-toolbox .shikitor-icon,
 .shikitor-popup-selector .shikitor-icon {
   display: inline-flex;
@@ -50,6 +60,13 @@
 
 [data-input-scroll]:has(.shikitor--attached) [data-input-backdrop] {
   color: transparent;
+  visibility: hidden !important;
+}
+
+/* The attached Shikitor projection owns the caret; keep DSH's native caret
+   from rendering a second line at the same time. */
+textarea.shikitor-input--attached {
+  caret-color: transparent !important;
 }
 
 /* DSH keeps owning trigger state and pick transactions, while the attached
@@ -136,9 +153,14 @@
 }
 
 .shikitor--attached .dsh-shikitor-token-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  box-sizing: border-box;
   position: relative;
   color: transparent !important;
   text-shadow: none !important;
+  vertical-align: -0.25em;
 }
 
 .shikitor--attached .dsh-shikitor-token-icon > svg {
@@ -296,6 +318,11 @@
 }
 
 .shikitor--attached.dsh-shikitor--has-inline-references
+  + textarea.shikitor-input--attached::selection {
+  background: transparent !important;
+}
+
+.shikitor--attached.dsh-shikitor--has-inline-tokens
   + textarea.shikitor-input--attached::selection {
   background: transparent !important;
 }
