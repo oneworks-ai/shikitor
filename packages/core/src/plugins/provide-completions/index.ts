@@ -1,7 +1,7 @@
 import './index.scss'
 
 import type { ResolvedPosition } from '@shikijs/types'
-import type { IDisposable, LanguageSelector, ProviderResult, Shikitor } from '@shikitor/core'
+import type { CompletionList, IDisposable, LanguageSelector, ProviderResult, Shikitor } from '@shikitor/core'
 import type { TextRange } from '@shikitor/core'
 import { definePlugin } from '@shikitor/core'
 import type {} from '@shikitor/core/plugins/provide-popup'
@@ -91,6 +91,12 @@ declare module '@shikitor/core' {
   export type CompletionItem = CompletionItemInner
   export interface CompletionList extends IDisposable {
     suggestions: CompletionItemInner[]
+    /**
+     * Fetch the next page for the same request. Providers omit this callback
+     * when the current page is complete. The completion surface calls it as
+     * the list approaches its scroll boundary and appends the returned items.
+     */
+    loadMore?: () => ProviderResult<CompletionList>
   }
   export interface CompletionItemProvider {
     triggerCharacters?: string[]
@@ -239,6 +245,7 @@ export default definePlugin({
   const elementRef = proxy({ current: ref<HTMLDivElement | typeof UNSET>(UNSET) })
 
   const keywordRef = refProxy(undefined as -1 | string | undefined)
+  let lastRenderedKeyword: -1 | string | undefined
   const triggerCharacter = proxy({
     current: undefined as string | undefined,
     offset: undefined as number | undefined
@@ -247,6 +254,10 @@ export default definePlugin({
   let lastReconciledValue = ctx.shikitor.value
 
   const completions = proxy<CompletionItemInner[]>([])
+  const loadMoreHandlers = new Set<() => void>()
+  const requestMoreCompletions = () => {
+    for (const loadMore of [...loadMoreHandlers]) loadMore()
+  }
   const resolvedCompletions = derive({
     current: get => {
       const keyword = get(keywordRef).current
@@ -273,6 +284,9 @@ export default definePlugin({
     const selected = selectIndexRef.current
     const keywordStr = keyword === -1 ? '' : keyword ?? ''
     const innerCompletionItemTemplate = completionItemTemplate.bind(null, splitKeywords(keywordStr), selected)
+    const previousList = element.querySelector<HTMLElement>(`.${'shikitor'}-completions__list`)
+    const previousScrollTop = keyword === lastRenderedKeyword ? previousList?.scrollTop ?? 0 : 0
+    lastRenderedKeyword = keyword
     const completionsContent = completionsSnapshot.length === 0
       ? `<div class="${'shikitor'}-completions__empty">${escapeHTML(options.emptyText ?? 'No completions available')}</div>`
       : completionsSnapshot.map(innerCompletionItemTemplate).join('')
@@ -300,12 +314,24 @@ export default definePlugin({
     const completionListElement = element.querySelector<HTMLElement>(
       `.${'shikitor'}-completions__list`
     )
+    if (completionListElement) completionListElement.scrollTop = previousScrollTop
     completionListElement?.addEventListener('wheel', event => {
       // The popup owns its scroll gesture. Embedded hosts commonly forward
       // wheel events from their editor scrollport and may prevent the list's
       // native scrolling when the event reaches that outer boundary.
       event.stopPropagation()
     }, { passive: true })
+    const loadMoreAtBoundary = () => {
+      if (!completionListElement?.isConnected) return
+      const remaining = completionListElement.scrollHeight
+        - completionListElement.scrollTop
+        - completionListElement.clientHeight
+      if (remaining <= Math.max(48, completionListElement.clientHeight * 0.2)) {
+        requestMoreCompletions()
+      }
+    }
+    completionListElement?.addEventListener('scroll', loadMoreAtBoundary, { passive: true })
+    queueMicrotask(loadMoreAtBoundary)
     const completionElements = element.querySelectorAll<HTMLElement>(`.${completionItemTemplate.prefix}`)
     completions.forEach((completion, index) => {
       const renderIcon = completion.renderIcon
@@ -499,15 +525,61 @@ export default definePlugin({
           closeCompletions()
         },
         registerCompletionItemProvider(selector, provider) {
-          let providerDispose: (() => void) | undefined
+          let providerDisposes: Array<() => void> = []
+          let providerLoadMore: (() => ProviderResult<CompletionList>) | undefined
+          let loadingMore = false
           let requestVersion = 0
           const { triggerCharacters, provideCompletionItems } = provider
 
           const completionSymbol = Symbol('completion')
+          const disposeProviderResults = () => {
+            for (const dispose of providerDisposes.splice(0)) dispose()
+          }
+          const loadMore = () => {
+            if (
+              providerLoadMore === undefined
+              || loadingMore
+              || triggerCharacter.current === undefined
+              || keywordRef.current === -1
+            ) return
+            const version = requestVersion
+            const fetchNext = providerLoadMore
+            let continueLoading = false
+            loadingMore = true
+            void Promise.resolve().then(fetchNext).then((page) => {
+              if (page === null || page === undefined) {
+                if (version === requestVersion) providerLoadMore = undefined
+                return
+              }
+              if (version !== requestVersion) {
+                page.dispose?.()
+                return
+              }
+              if (page.dispose) providerDisposes.push(page.dispose)
+              providerLoadMore = page.loadMore
+              const suggestions = page.suggestions ?? []
+              completions.push(...suggestions.map(suggestion => ({
+                ...suggestion,
+                [completionSymbol]: true
+              })))
+              continueLoading = suggestions.length === 0 && providerLoadMore !== undefined
+            }).catch((error) => {
+              if (version === requestVersion) providerLoadMore = undefined
+              console.error('[shikitor] loading more completions failed:', error)
+            }).finally(() => {
+              if (version !== requestVersion) return
+              loadingMore = false
+              if (continueLoading) queueMicrotask(loadMore)
+            })
+          }
+          loadMoreHandlers.add(loadMore)
           const registeredTriggerCharacters = [...triggerCharacters ?? []]
           allTriggerCharacters.push(...registeredTriggerCharacters)
           const disposeWatcher = scopeWatch(async get => {
             const version = ++requestVersion
+            providerLoadMore = undefined
+            loadingMore = false
+            disposeProviderResults()
             const char = get(triggerCharacter).current
             const keyword = get(keywordRef).current
             const language = get(languageRef).current
@@ -521,8 +593,7 @@ export default definePlugin({
             let suggestions: CompletionItemInner[] = []
             if (char && triggerCharacters?.includes(char)) {
               const { rawTextHelper } = shikitor
-              providerDispose?.()
-              const { suggestions: newSugs = [], dispose } = await provideCompletionItems(
+              const { suggestions: newSugs = [], dispose, loadMore } = await provideCompletionItems(
                 rawTextHelper,
                 position,
                 {
@@ -535,7 +606,8 @@ export default definePlugin({
                 return
               }
               suggestions = newSugs
-              providerDispose = dispose
+              if (dispose) providerDisposes.push(dispose)
+              providerLoadMore = loadMore
             }
 
             const oldCompletionsIndexes = completions
@@ -560,7 +632,9 @@ export default definePlugin({
             dispose() {
               requestVersion++
               disposeWatcher()
-              providerDispose?.()
+              loadMoreHandlers.delete(loadMore)
+              providerLoadMore = undefined
+              disposeProviderResults()
               for (const char of registeredTriggerCharacters) {
                 const index = allTriggerCharacters.indexOf(char)
                 if (index >= 0) allTriggerCharacters.splice(index, 1)

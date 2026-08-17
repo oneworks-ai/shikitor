@@ -1,48 +1,99 @@
-# dsh-shikitor
+<p align="center">
+  <img src="../../playground/public/favicon.svg" width="256" alt="Shikitor Logo">
+</p>
 
-Minimal Shikitor integration for the DeepSeek Harness web client. It contributes:
+<h1 align="center">dsh-shikitor</h1>
 
-- a Shikitor rendering and plugin layer attached to DSH's native sender textarea;
-- a session-backed file editor in the `conversation.view` tab ring;
+## Description
+
+A Shikitor editor and sender integration for the DeepSeek Harness web client.
+
+| en-US | [中文](./README.zh-CN.md) |
+
+## Preview
+
+### Discover from the message sender
+
+<table>
+  <thead>
+    <tr>
+      <th width="62%">Preview</th>
+      <th>What it discovers</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/dsh-shikitor-completion-sessions-en-dark.png">
+          <img src="./assets/screenshots/dsh-shikitor-completion-sessions-en-light.png" width="100%" alt="Session completion triggered by hash in the DeepSeek Harness sender">
+        </picture>
+      </td>
+      <td><strong><code>#</code> Sessions</strong><br>Searches the conversations shown in the current workspace sidebar. A selection is inserted as one protected session link using the <code>deepseekharness://sessions/&lt;sessionId&gt;</code> protocol.</td>
+    </tr>
+    <tr>
+      <td>
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/dsh-shikitor-completion-files-en-dark.png">
+          <img src="./assets/screenshots/dsh-shikitor-completion-files-en-light.png" width="100%" alt="Workspace file completion triggered by at sign in the DeepSeek Harness sender">
+        </picture>
+      </td>
+      <td><strong><code>@</code> Workspace files</strong><br>Lists files from the current workspace. When Cordis plugins or subagents contribute candidates, they appear before files. Files are ordered from shallow to deep, loaded incrementally, and can be narrowed with <code>file:</code> or <code>plugin:</code>. Hidden paths appear only after the query explicitly enters a dot-prefixed segment.</td>
+    </tr>
+    <tr>
+      <td>
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/dsh-shikitor-completion-skills-en-dark.png">
+          <img src="./assets/screenshots/dsh-shikitor-completion-skills-en-light.png" width="100%" alt="Skill completion triggered by dollar sign in the DeepSeek Harness sender">
+        </picture>
+      </td>
+      <td><strong><code>$</code> Skills</strong><br>Searches merged project, home, and plugin-provided skills. Project-local entries take precedence when names collide, and the chosen skill is converted to DSH's executable <code>/skill-name</code> form.</td>
+    </tr>
+    <tr>
+      <td>
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/dsh-shikitor-completion-commands-en-dark.png">
+          <img src="./assets/screenshots/dsh-shikitor-completion-commands-en-light.png" width="100%" alt="Command completion triggered by slash in the DeepSeek Harness sender">
+        </picture>
+      </td>
+      <td><strong><code>/</code> Commands</strong><br>Uses DSH's command catalog together with executable skills. Selection remains inside DSH's original pick transaction, so built-in command behavior and plugin contributions continue to work.</td>
+    </tr>
+  </tbody>
+</table>
+
+### Workspace file editor
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/dsh-shikitor-editor-en-dark.png">
+  <img src="./assets/screenshots/dsh-shikitor-editor-en-light.png" width="100%" alt="Shikitor workspace file editor in DeepSeek Harness">
+</picture>
+
+### Editor settings
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/dsh-shikitor-settings-en-dark.png">
+  <img src="./assets/screenshots/dsh-shikitor-settings-en-light.png" width="100%" alt="Shikitor file editor settings in DeepSeek Harness">
+</picture>
+
+## Features
+
+The integration provides:
+
+- Shikitor editing and completion menus in the DSH message sender;
+- a file editor tab for the current workspace;
 - a Cordis `ctx.shikitor` service that other client plugins can extend.
 
-The attached sender keeps DSH's command and reference pipeline as the data and
-execution owner, while Shikitor renders every discovery shortcut:
-
-- `#` lists the same sessions shown in the sidebar;
-- `@` lists workspace files alongside DSH's existing Cordis plugin and
-  subagent sources;
-- `$` lists the session's merged skill catalog (`.agents`, `.codex`, `.claude`,
-  `.oo`, and plugin providers) and inserts DSH's executable `/skill-name` form;
-- `/` mirrors DSH's command and skill sources; accepting an item is routed
-  back through DSH's original pick transaction so command claims and execution
-  semantics remain intact.
-
-DSH's built-in trigger menu stays mounted as the state machine behind the
-adapter but is hidden while the Shikitor sender mode is active. Switching back
-to the native sender restores DSH's original renderer and keyboard behavior.
-The mode switch is included only in development bundles built with
-`pnpm --filter dsh-shikitor build:dev`; production bundles retain a hidden DOM
-anchor for textarea attachment without exposing the switch to users.
-
 Completion menus support pointer selection, Arrow Up/Down, Enter/Tab, and
-Escape. File scans are performed by the bundle's host half against the
-session cwd, ignore generated dependency trees, and return a bounded catalog.
-Accepted file references keep an absolute titled Markdown link as their draft
-source while rendering only the filename. Cmd-click (Ctrl-click on Windows or
-Linux) opens the referenced workspace file in the Shikitor editor tab.
+Escape. Workspace files are ordered from shallow to deep and loaded into the
+menu incrementally while scrolling. The Message sender settings can further
+limit file search with comma-separated include/exclude folder globs. Accepted
+file references render only the filename. Cmd-click
+(Ctrl-click on Windows or Linux) opens the referenced workspace file in the
+Shikitor editor tab.
 
 Skill discovery covers `<projectRoot>/{.agents,.codex,.claude,.oo}/skills` and
 the matching directories under the user's home. Project entries win duplicate
-names from home entries. Discovery is registered through DSH's `ctx.skills`
-provider interface, so `$`, `/`, model catalogs, and skill body loading share
-the same entries and invocation policy.
-
-The package is an external DSH bundle. It lives in Shikitor so DeepSeek Harness
-does not need source changes. DSH continues to own the composer, textarea,
-draft state, keyboard policy, sender controls and their existing extension
-points; the sender contribution uses `conversation.input.right` only as its
-attachment lifecycle and mode-switch entry.
+names from home entries.
 
 ## Register a surface plugin
 
@@ -79,29 +130,27 @@ export function apply(ctx: ClientContext) {
 ```
 
 The default filename mapping, glyphs, fonts, and colors come from
-[Atom File Icons](https://github.com/file-icons/atom) through its pinned browser
-adapter. Rules can match `extensions`, exact `fileNames`, or a custom `match`
-function. Their `icon` may be an Atom File Icons class list or a DOM renderer.
-Higher `priority` wins; equally ranked rules prefer the most recently
-registered contribution. The disposer removes only that plugin's rule.
+[Atom File Icons](https://github.com/file-icons/atom). Rules can match
+`extensions`, exact `fileNames`, or a custom `match` function. Their `icon` may
+be an Atom File Icons class list or a DOM renderer. Higher `priority` wins;
+equally ranked rules prefer the most recently registered contribution. The
+disposer removes only that plugin's rule.
 
 General settings also expose browser-persisted path rules. Each rule accepts a
 glob (`*` within one path segment, `**` across folders) and can select any Atom
 glyph or an image. Image sources may be HTTP(S)/data URLs, workspace-relative
-paths, or absolute paths inside the current workspace. Workspace images are
-read by the host with traversal, file-type, and 1 MiB size checks. Later user
-rules win. Plugins can observe the same effective registry through
+paths, or absolute paths inside the current workspace. Workspace images must
+use a supported image type and be no larger than 1 MiB. Later user rules win.
+Plugins can observe the same effective registry through
 `fileIconRules`; the editable rules are exposed separately through
 `configuredFileIconRules` and `configureFileIconRules()`.
 
-The localized DSH Editor settings page uses the same tab and popup-menu
-patterns as the host. Its General tab owns the shared color scheme,
-highlight-theme family, cursor shape, and file-icon policy. Sender and File
-editor inherit that appearance until their first surface-specific change;
+The General settings tab owns the shared color scheme, highlight-theme family,
+cursor shape, and file-icon policy. Sender and File editor inherit that
+appearance until their first surface-specific change;
 `resetSurface()` removes the override and resumes live inheritance. Editor-only
 line/current-line controls remain on the File editor tab. These browser-local
-preferences are also available through `ctx.shikitor.appearance`,
+appearance values are also available through `ctx.shikitor.appearance`,
 `resolveAppearance()`, and `configureAppearance()`.
 
-Opened files are read-only with respect to the host filesystem for now: edits
-stay in the session-local browser document until a save contract is added.
+Edited files save automatically by default. Auto save can be disabled in the File editor settings; the editor toolbar and Cmd/Ctrl+S remain available for manual saves. Plugins can read and update this behavior through `ctx.shikitor.preferences` and `configurePreferences()`.

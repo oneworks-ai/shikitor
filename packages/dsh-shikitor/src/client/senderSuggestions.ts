@@ -1,5 +1,5 @@
 import { definePlugin } from '@shikitor/core'
-import type { CompletionItem } from '@shikitor/core'
+import type { CompletionItem, CompletionList } from '@shikitor/core'
 import type {} from '@shikitor/core/plugins/provide-completions'
 import type { CompletionItemIconRenderer } from '@shikitor/core/plugins/provide-completions'
 import { CompletionItemKind } from '@shikitor/core/plugins/provide-completions'
@@ -12,6 +12,8 @@ import { presentFileIcon } from './fileIcons.ts'
 import { NS } from './locales.ts'
 import type { ShikitorService } from './registry.ts'
 import { suggestionIcons } from './suggestionIcons.ts'
+
+const FILE_PAGE_SIZE = 40
 
 interface MentionQuery {
   readonly protocol: MentionProtocol
@@ -181,10 +183,7 @@ export function createSenderSuggestionsPlugin(
             if (!programmatic && !atDshTriggerBoundary(value, triggerEnd, trigger)) return
             const range = triggerRange(triggerEnd)
             try {
-              const entries = mentionQuery === undefined
-                ? await catalog.triggerSuggestions(sessionId, trigger, request.query)
-                : await catalog.mentionSuggestions(sessionId, mentionQuery.protocol, mentionQuery.query)
-              const suggestions: CompletionItem[] = entries.map(entry => ({
+              const toCompletionItem = (entry: Awaited<ReturnType<typeof catalog.triggerSuggestions>>[number]) => ({
                 label: entry.name,
                 ...(mentionQuery === undefined
                   ? {}
@@ -202,8 +201,45 @@ export function createSenderSuggestionsPlugin(
                   entry.source,
                   entry.name,
                 ),
-              }))
-              return { suggestions }
+              } satisfies CompletionItem)
+              const fileQuery = trigger === '@'
+                && (mentionQuery === undefined || mentionQuery.protocol === 'file')
+                ? mentionQuery?.query ?? request.query
+                : undefined
+              const filePage = fileQuery === undefined
+                ? undefined
+                : await catalog.fileSuggestionPage(sessionId, fileQuery, 0, FILE_PAGE_SIZE)
+              const entries = mentionQuery === undefined
+                ? (await catalog.triggerSuggestions(sessionId, trigger, request.query))
+                    .filter(entry => entry.source !== 'file')
+                : mentionQuery.protocol === 'file'
+                  ? []
+                  : await catalog.mentionSuggestions(sessionId, mentionQuery.protocol, mentionQuery.query)
+              const suggestions: CompletionItem[] = [
+                ...entries,
+                ...(filePage?.suggestions ?? []),
+              ].map(toCompletionItem)
+              const nextFilePage = (offset: number): CompletionList['loadMore'] | undefined => {
+                if (fileQuery === undefined) return
+                return async () => {
+                  const page = await catalog.fileSuggestionPage(
+                    sessionId,
+                    fileQuery,
+                    offset,
+                    FILE_PAGE_SIZE,
+                  )
+                  const nextOffset = offset + page.suggestions.length
+                  return {
+                    suggestions: page.suggestions.map(toCompletionItem),
+                    ...(page.hasMore ? { loadMore: nextFilePage(nextOffset) } : {}),
+                  }
+                }
+              }
+              const nextOffset = filePage?.suggestions.length ?? 0
+              return {
+                suggestions,
+                ...(filePage?.hasMore ? { loadMore: nextFilePage(nextOffset) } : {}),
+              }
             } catch (error) {
               console.error(`[dsh-shikitor] reading ${trigger} suggestions failed:`, error)
               return { suggestions: [] }

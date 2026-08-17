@@ -4,6 +4,7 @@ import { lstat, opendir, readFile, realpath, stat, writeFile } from 'node:fs/pro
 import { homedir } from 'node:os'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -203,9 +204,11 @@ async function scanFiles(cwd, limit, signal) {
   const files = []
   let truncated = false
 
-  while (pending.length > 0) {
+  // Breadth-first traversal makes the bounded snapshot deterministic and
+  // useful: root files arrive before first-level folders, then the next depth.
+  for (let directoryIndex = 0; directoryIndex < pending.length; directoryIndex += 1) {
     signal?.throwIfAborted()
-    const directory = pending.pop()
+    const directory = pending[directoryIndex]
     let handle
     try {
       handle = await opendir(directory)
@@ -214,7 +217,10 @@ async function scanFiles(cwd, limit, signal) {
       continue
     }
 
-    for await (const entry of handle) {
+    const entries = []
+    for await (const entry of handle) entries.push(entry)
+    entries.sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
       signal?.throwIfAborted()
       if (entry.isDirectory()) {
         if (!IGNORED_DIRECTORIES.has(entry.name)) pending.push(resolve(directory, entry.name))
@@ -230,7 +236,11 @@ async function scanFiles(cwd, limit, signal) {
     if (files.length >= limit) break
   }
 
-  files.sort((left, right) => left.localeCompare(right))
+  files.sort((left, right) => {
+    const leftDepth = left.split('/').length
+    const rightDepth = right.split('/').length
+    return leftDepth - rightDepth || left.localeCompare(right)
+  })
   return { files, truncated }
 }
 
@@ -296,6 +306,36 @@ class ShikitorCatalogService extends TypertRemoteService {
     }
     await writeFile(target, '', { flag: 'wx', signal })
     return { path: target, text: '' }
+  }
+
+  /** Atomically replace one existing UTF-8 workspace file. */
+  async write(cwd, path, text, maxBytes, signal) {
+    if (typeof cwd !== 'string' || !isAbsolute(cwd)) {
+      throw new TypeError('shikitorCatalog.write requires an absolute cwd')
+    }
+    if (typeof path !== 'string' || !isAbsolute(path)) {
+      throw new TypeError('shikitorCatalog.write requires an absolute path')
+    }
+    if (typeof text !== 'string' || text.includes('\0')) {
+      throw new TypeError('shikitorCatalog.write requires UTF-8 text')
+    }
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 10 * 1024 * 1024) {
+      throw new RangeError('shikitorCatalog.write maxBytes must be between 1 and 10485760')
+    }
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+      throw new RangeError(`shikitorCatalog.write file exceeds ${maxBytes} bytes`)
+    }
+    signal?.throwIfAborted()
+    const root = await realpath(resolve(cwd))
+    const target = await realpath(resolve(path.replaceAll('%3C', '<').replaceAll('%3E', '>')))
+    if (!isWithinRoot(target, root)) {
+      throw new RangeError('shikitorCatalog.write path must stay inside cwd')
+    }
+    const metadata = await stat(target)
+    if (!metadata.isFile()) throw new TypeError('shikitorCatalog.write path is not a file')
+    signal?.throwIfAborted()
+    await writeFileAtomic(target, text, { mode: metadata.mode & 0o777 })
+    return { path: target, text }
   }
 
   /** Read a workspace image as a browser-safe data URL for custom file icons. */
@@ -491,6 +531,15 @@ Remote('read')(ShikitorCatalogService.prototype.read, {
 
 Remote('create')(ShikitorCatalogService.prototype.create, {
   name: 'create',
+  private: false,
+  static: false,
+  addInitializer(initializer) {
+    remoteInitializers.push(initializer)
+  },
+})
+
+Remote('write')(ShikitorCatalogService.prototype.write, {
+  name: 'write',
   private: false,
   static: false,
   addInitializer(initializer) {
