@@ -1,4 +1,4 @@
-import type { DecorationItem } from '@shikijs/core'
+import type { DecorationItem } from '@shikijs/types'
 import type { BundledLanguage, BundledTheme } from 'shiki'
 
 import type { _KeyboardEvent, RefObject, TextRange } from '../base'
@@ -11,6 +11,8 @@ import type { RawTextHelper } from '../utils/getRawTextHelper'
 import type { Cursor, ResolvedCursor, ResolvedSelection, Selection } from './base'
 
 export * from './base'
+
+export type ShikitorRenderMode = 'all-dom' | 'auto' | 'less-dom'
 
 export interface InlineReplacement {
   /** Source range that remains authoritative for editing and copy. */
@@ -75,6 +77,12 @@ export interface ShikitorOptions extends ShikitorEvents {
   }
   readOnly?: boolean
   theme?: BundledTheme
+  /**
+   * Rendering strategy. `auto` uses native form-control highlights when the
+   * browser and active editor features support them, otherwise it falls back
+   * to the complete DOM projection. @default auto
+   */
+  renderMode?: ShikitorRenderMode
   decorations?: DecorationItem[]
   /**
    * Replace source ranges visually without changing the textarea value.

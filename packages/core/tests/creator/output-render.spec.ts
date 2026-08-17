@@ -1,16 +1,49 @@
-import type { DecorationItem } from '@shikijs/core'
+import type { DecorationItem } from '@shikijs/types'
 import { transformerRenderWhitespace } from '@shikijs/transformers'
-import { getHighlighter } from 'shiki'
+import { createHighlighter } from 'shiki'
 import { describe, expect, test, vi } from 'vitest'
 
 import {
+  canVirtualizeAllDom,
   createLatestRenderController,
   normalizeDecorations,
   normalizeInlineReplacementDecorations,
-  resolveVisualScrollLeft
+  resolveVisualScrollLeft,
+  selectRenderMode
 } from '../../src/creator/controlled/outputRenderControlled'
+import { resolveVirtualLineRange } from '../../src/creator/controlled/virtualViewport'
 
 describe('output rendering', () => {
+  test('selects less DOM only for capable non-projected editors', () => {
+    expect(selectRenderMode({ capable: true, needsProjection: false })).toBe('less-dom')
+    expect(selectRenderMode({
+      capable: true,
+      needsProjection: false,
+      requested: 'all-dom'
+    })).toBe('all-dom')
+    expect(selectRenderMode({
+      capable: false,
+      needsProjection: false,
+      requested: 'less-dom'
+    })).toBe('all-dom')
+    expect(selectRenderMode({
+      capable: true,
+      needsProjection: true,
+      requested: 'less-dom'
+    })).toBe('all-dom')
+  })
+
+  test('virtualizes all DOM only when no projection feature owns line DOM', () => {
+    expect(canVirtualizeAllDom({})).toBe(true)
+    expect(canVirtualizeAllDom({
+      decorations: [{ start: 0, end: 1, properties: {} }]
+    })).toBe(false)
+    expect(canVirtualizeAllDom({
+      inlineReplacements: [{ start: 0, end: 1 }]
+    })).toBe(false)
+    expect(canVirtualizeAllDom({ plugins: [{} as never] })).toBe(false)
+  })
+
   test('keeps a wider visual transform authoritative over native input scrolling', () => {
     expect(resolveVisualScrollLeft(20, '808px')).toBe(808)
     expect(resolveVisualScrollLeft(20, '')).toBe(20)
@@ -84,7 +117,7 @@ describe('output rendering', () => {
   })
 
   test('keeps whitespace rendering safe for a multi-line decoration', async () => {
-    const highlighter = await getHighlighter({
+    const highlighter = await createHighlighter({
       themes: ['github-dark'],
       langs: ['typescript']
     })
@@ -127,6 +160,36 @@ describe('output rendering', () => {
 
     expect(fallbacks).toEqual(['first', 'second'])
     expect(commits).toEqual(['second highlighted'])
+  })
+
+  test('publishes progressive renders without allowing stale commits', async () => {
+    const commits: string[] = []
+    const controller = createLatestRenderController<string, string>({
+      renderFallback: vi.fn(),
+      renderAsync: async (input, _isCurrent, publish) => {
+        publish(`${input} viewport`)
+        return `${input} complete`
+      },
+      commit: output => commits.push(output)
+    })
+
+    await controller.render('current')
+
+    expect(commits).toEqual(['current viewport', 'current complete'])
+  })
+
+  test('resolves an overscanned viewport without scaling with document length', () => {
+    vi.stubGlobal('getComputedStyle', () => (
+      { lineHeight: '22px' } as CSSStyleDeclaration
+    ))
+    const input = { clientHeight: 44, scrollTop: 220 } as HTMLTextAreaElement
+
+    expect(resolveVirtualLineRange(input, 5000, 2)).toEqual({
+      end: 15,
+      lineHeight: 22,
+      start: 8
+    })
+    vi.unstubAllGlobals()
   })
 
   test('keeps the fallback on errors and after disposal', async () => {

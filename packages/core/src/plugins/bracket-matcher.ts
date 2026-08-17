@@ -1,4 +1,4 @@
-import type { DecorationItem } from '@shikijs/core'
+import type { DecorationItem } from '@shikijs/types'
 import type { ResolvedCursor, Shikitor } from '@shikitor/core'
 import { definePlugin } from '@shikitor/core'
 import { isMultipleKey } from '@shikitor/core/utils'

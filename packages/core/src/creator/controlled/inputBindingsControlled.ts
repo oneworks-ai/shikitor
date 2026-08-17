@@ -1,4 +1,4 @@
-import type { ResolvedPosition } from '@shikijs/core'
+import type { ResolvedPosition } from '@shikijs/types'
 
 import type { ShikitorContext } from '../../context'
 import type { Shikitor } from '../../editor'

@@ -1,6 +1,6 @@
 import './index.scss'
 
-import type { ResolvedPosition } from '@shikijs/core'
+import type { ResolvedPosition } from '@shikijs/types'
 import type { IDisposable, LanguageSelector, ProviderResult, Shikitor } from '@shikitor/core'
 import type { TextRange } from '@shikitor/core'
 import { definePlugin } from '@shikitor/core'
