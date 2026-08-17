@@ -92,6 +92,7 @@ export function ShikitorSenderBridge({
   const editorOptions = useMemo<ShikitorOptions>(() => ({
     language: 'markdown',
     lineNumbers: 'off',
+    highlightCurrentLine: false,
     hideSelfCursorUsername: true,
     readOnly: input.phase !== 'plain',
     theme: resolveShikitorTheme(senderAppearance, colorScheme),

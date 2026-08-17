@@ -73,6 +73,7 @@ export const inject = [
   'slots',
   'theme',
   'sessions',
+  'workspaces',
   'connection',
   'inputTriggers',
   'locale',
@@ -177,6 +178,7 @@ export function apply(ctx: ClientContext): void {
         catalog.workspaceFilePath(sessionId, path),
       ),
       runtime: shikitor,
+      workspaceCwd: () => catalog.workspaceCwd(sessionId),
     }),
   }, ShikitorEditor))
 

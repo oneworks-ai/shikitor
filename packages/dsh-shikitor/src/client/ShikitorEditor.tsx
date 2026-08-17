@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import type { ShikitorFileIconRule } from './fileIcons.ts'
 import { NS } from './locales.ts'
+import { MaterialIcon } from './MaterialIcon.tsx'
 import { ShikitorFileIcon, ShikitorFileTree } from './ShikitorFileTree.tsx'
 import type {
   ShikitorAppearance,
@@ -26,6 +27,7 @@ interface EditorInjected {
   loadWorkspaceFiles: () => Promise<readonly string[]>
   openWorkspaceFile: (path: string) => Promise<void>
   runtime: ShikitorService
+  workspaceCwd: () => string | undefined
 }
 
 const SUGGESTED_ROOT_FILES = ['README.md', 'README.zh-Hans.md', 'AGENTS.md', 'package.json'] as const
@@ -71,6 +73,7 @@ export function ShikitorEditor({
   loadWorkspaceFiles,
   openWorkspaceFile,
   runtime,
+  workspaceCwd,
   sessionId,
   useSessions,
   useAppearance,
@@ -89,7 +92,7 @@ export function ShikitorEditor({
   const colorScheme = useColorScheme(value => value)
   const appearance = useAppearance(value => value)
   const document = useDocument(value => value)
-  const cwd = useSessions(state => state.byId[sessionId]?.cwd)
+  const cwd = useSessions(state => state.byId[sessionId]?.cwd) ?? workspaceCwd()
   const [treeOpen, setTreeOpen] = useState(true)
   const [tree, setTree] = useState<FileTreeState>({ files: [], status: 'loading' })
   const [creating, setCreating] = useState(false)
@@ -224,9 +227,7 @@ export function ShikitorEditor({
               {breadcrumb.map((segment, index) => (
                 <span key={`${segment}-${index}`} className="dsh-shikitor-editor__breadcrumb">
                   {index > 0 && (
-                    <span className="shikitor-icon dsh-shikitor-editor__breadcrumb-separator" aria-hidden="true">
-                      chevron_right
-                    </span>
+                    <MaterialIcon name="chevron_right" className="dsh-shikitor-editor__breadcrumb-separator" />
                   )}
                   <span className="dsh-shikitor-editor__breadcrumb-label">{segment}</span>
                 </span>
@@ -249,7 +250,7 @@ export function ShikitorEditor({
             title={saving ? t('editor.saving') : t('editor.saveShortcut')}
             onClick={saveDocument}
           >
-            <span className="shikitor-icon" aria-hidden="true">save</span>
+            <MaterialIcon name="save" className="dsh-shikitor-material-icon" />
           </button>
           <button
             type="button"
@@ -260,9 +261,10 @@ export function ShikitorEditor({
             title={treeOpen ? t('tree.collapse') : t('tree.expand')}
             onClick={() => { setTreeOpen(value => !value) }}
           >
-            <span className="shikitor-icon" aria-hidden="true">
-              {treeOpen ? 'right_panel_close' : 'right_panel_open'}
-            </span>
+            <MaterialIcon
+              name={treeOpen ? 'right_panel_close' : 'right_panel_open'}
+              className="dsh-shikitor-material-icon"
+            />
           </button>
         </div>
       </div>
@@ -284,7 +286,7 @@ export function ShikitorEditor({
                         void submitCreateFile()
                       }}
                     >
-                      <span className="shikitor-icon" aria-hidden="true">note_add</span>
+                      <MaterialIcon name="note_add" className="dsh-shikitor-material-icon" />
                       <div className="dsh-shikitor-editor-empty__create-main">
                         <input
                           ref={newFileInput}
@@ -324,9 +326,10 @@ export function ShikitorEditor({
                       disabled={cwd === undefined}
                       onClick={() => { setCreateOpen(true) }}
                     >
-                      <span className="shikitor-icon dsh-shikitor-editor-empty__action-icon" aria-hidden="true">
-                        note_add
-                      </span>
+                      <MaterialIcon
+                        name="note_add"
+                        className="dsh-shikitor-material-icon dsh-shikitor-editor-empty__action-icon"
+                      />
                       <span className="dsh-shikitor-editor-empty__action-copy">
                         <strong>{t('empty.create')}</strong>
                         <span>{t('empty.createHint')}</span>
@@ -357,9 +360,10 @@ export function ShikitorEditor({
                   className="dsh-shikitor-editor-empty__action"
                   onClick={focusFileTree}
                 >
-                  <span className="shikitor-icon dsh-shikitor-editor-empty__action-icon" aria-hidden="true">
-                    folder_open
-                  </span>
+                  <MaterialIcon
+                    name="folder_open"
+                    className="dsh-shikitor-material-icon dsh-shikitor-editor-empty__action-icon"
+                  />
                   <span className="dsh-shikitor-editor-empty__action-copy">
                     <strong>{t('empty.browse')}</strong>
                     <span>{t('empty.browseHint')}</span>

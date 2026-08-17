@@ -1,6 +1,6 @@
 {
   "name": "@shikitor/core",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shikitor core",
   "license": "MIT",
   "jiek": {
@@ -26,7 +26,10 @@
     "./plugins/provide-text-input": "./src/plugins/provide-text-input.ts",
     "./plugins/gutter-decorations": "./src/plugins/gutter-decorations.ts",
     "./plugins/line-widgets": "./src/plugins/line-widgets.ts",
-    "./plugins/*": ["./src/plugins/*/index.ts", "./src/plugins/*.ts"]
+    "./plugins/*": [
+      "./src/plugins/*/index.ts",
+      "./src/plugins/*.ts"
+    ]
   },
   "repository": {
     "type": "git",

@@ -167,17 +167,18 @@ export async function create(
   const selectionsRef = proxy({
     current: [] as ResolvedSelection[]
   })
-  disposes.push(listen(document, 'selectionchange', e => {
+  const syncSelection = (event?: Event) => {
     if (!shikitor) return
     const { focusNode } = document.getSelection() ?? {}
-    if (
+    const eventBelongsToInput = event?.target === input
+    if (!eventBelongsToInput &&
       (
         !(focusNode instanceof HTMLElement)
         || focusNode.closest(`.${'shikitor'}`) !== target
       )
       && (
-        !(e.target instanceof HTMLElement)
-        || e.target.closest(`.${'shikitor'}`) !== target
+        !(event?.target instanceof HTMLElement)
+        || event.target.closest(`.${'shikitor'}`) !== target
       )
     ) return
 
@@ -200,7 +201,15 @@ export async function create(
     ) {
       selectionsRef.current[0] = selection
     }
-  }))
+  }
+  // Textarea selection changes are not consistently surfaced as a document
+  // selectionchange event. Keep the rendered caret in sync with the host
+  // textarea for typing, keyboard navigation, and pointer selection too.
+  disposes.push(listen(document, 'selectionchange', syncSelection))
+  listenInput('input', syncSelection)
+  listenInput('select', syncSelection)
+  listenInput('keyup', syncSelection)
+  listenInput('mouseup', syncSelection)
 
   disposes.push(outputRenderControlled(
     { target, input, lines, output },

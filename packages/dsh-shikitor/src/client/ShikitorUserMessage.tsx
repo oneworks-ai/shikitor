@@ -21,6 +21,7 @@ import actionCss from '../../../../vendors/deepseek-ai/deepseek-harness/packages
 import imageCss from '../../../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-attachment/src/MessageImage.module.css'
 
 import { parseSessionLinks, type SessionLinkReference } from './sessionLinks.ts'
+import { MaterialIcon } from './MaterialIcon.tsx'
 
 type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
 
@@ -201,9 +202,7 @@ function SessionMessageLink({
       data-session-id={reference.sessionId}
       onClick={onClick}
     >
-      <span className="shikitor-icon dsh-shikitor-message-session-link__icon" aria-hidden>
-        chat_bubble
-      </span>
+      <MaterialIcon name="chat_bubble" className="dsh-shikitor-message-session-link__icon" />
       <span className="dsh-shikitor-message-session-link__label">{reference.label}</span>
     </a>
   )

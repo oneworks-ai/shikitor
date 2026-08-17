@@ -286,6 +286,12 @@ function visualGeometry(output: HTMLElement, lineHeight: number): VisualBoundary
       return
     }
 
+    if (element.classList.contains(tokenIconClass)) {
+      const rect = element.getBoundingClientRect()
+      boundaries.push(normalize(rect, start, rect.left), normalize(rect, end, rect.right))
+      return
+    }
+
     const node = textNodeOf(element)
     if (!node) return
     for (let character = 0; character <= node.length; character++) {
@@ -373,7 +379,10 @@ export function createSenderTokenIcons(options: SenderTokenOptions) {
       selectionLayer.replaceChildren()
       if (
         disposed
-        || references.length === 0
+        || (
+          references.length === 0
+          && !output.querySelector(`.${tokenIconClass}`)
+        )
         || input.ownerDocument.activeElement !== input
         || input.selectionStart === input.selectionEnd
       ) return
@@ -393,6 +402,10 @@ export function createSenderTokenIcons(options: SenderTokenOptions) {
           element.dataset.dshShikitorSourceKind === 'file'
           || element.dataset.dshShikitorSourceKind === 'session'
         ) {
+          appendSelectionRect(element.getBoundingClientRect())
+          return
+        }
+        if (element.classList.contains(tokenIconClass)) {
           appendSelectionRect(element.getBoundingClientRect())
           return
         }
@@ -487,6 +500,7 @@ export function createSenderTokenIcons(options: SenderTokenOptions) {
         lineStart += value.length + 1
       })
       target.classList.toggle('dsh-shikitor--has-inline-references', references.length > 0)
+      target.classList.toggle('dsh-shikitor--has-inline-tokens', tokens.length > 0)
       refreshGeometry()
       observe()
     }
@@ -729,6 +743,7 @@ export function createSenderTokenIcons(options: SenderTokenOptions) {
       fonts?.removeEventListener('loadingdone', scheduleGeometry)
       selectionLayer.remove()
       target.classList.remove('dsh-shikitor--has-inline-references')
+      target.classList.remove('dsh-shikitor--has-inline-tokens')
     }
     },
   })
