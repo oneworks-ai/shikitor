@@ -408,7 +408,7 @@ export default definePlugin({
     const target = shikitor.element
     const output = target.querySelector('.shikitor-output') as HTMLElement
     const gutters = target.querySelector('.shikitor-lines') as HTMLElement
-    const input = target.querySelector('.shikitor-input') as HTMLTextAreaElement
+    const input = shikitor.inputElement
     const container = target.querySelector('.shikitor-container') as HTMLElement
     const selectionLayer = document.createElement('div')
     const scrollTrack = document.createElement('div')

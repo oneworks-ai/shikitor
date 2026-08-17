@@ -1,0 +1,69 @@
+{
+  "name": "dsh-shikitor",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shikitor editor and sender surfaces for DeepSeek Harness",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./dist/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "dist/client.js",
+    "dist/client.js.map",
+    "vendor/file-icons-js/LICENSE.md",
+    "vendor/file-icons-js/UPSTREAM.md",
+    "vendor/material-symbols-outlined/LICENSE",
+    "vendor/material-symbols-outlined/UPSTREAM.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-input-trigger",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "build:dev": "tsdown --env.DSH_SHIKITOR_DEV true"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-agent": "link:../../vendors/deepseek-ai/deepseek-harness/packages/core/agent",
+    "@deepseek-ai/dsh-llm": "link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm",
+    "@deepseek-ai/dsh-skill-filesystem": "link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "link:../../vendors/deepseek-ai/deepseek-harness/vendor/cordis",
+    "@deepseek-ai/dsh-api-remotes": "link:../../vendors/deepseek-ai/deepseek-harness/packages/api/remotes",
+    "@deepseek-ai/dsh-client-locale": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/locale",
+    "@deepseek-ai/dsh-client-runtime": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/runtime",
+    "@deepseek-ai/dsh-client-ui-conversation": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-conversation",
+    "@deepseek-ai/dsh-client-ui-input-trigger": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-input-trigger",
+    "@deepseek-ai/dsh-client-ui-primitives": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-primitives",
+    "@deepseek-ai/dsh-client-ui-settings": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-settings",
+    "@deepseek-ai/dsh-client-ui-slots": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-slots",
+    "@deepseek-ai/dsh-client-ui-theme": "link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-theme",
+    "@deepseek-ai/dsh-typert-protocol": "link:../../vendors/deepseek-ai/deepseek-harness/packages/typert/protocol",
+    "@shikitor/core": "workspace:^",
+    "@shikitor/react": "workspace:^",
+    "@types/react": "18.2.75",
+    "react": "^18.2.0",
+    "sass": "^1.90.0",
+    "shiki": "^1.12.1",
+    "tsdown": "^0.22.2"
+  }
+}

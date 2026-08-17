@@ -111,7 +111,10 @@ export interface ShikitorSupportPlugin {
 }
 
 export interface ShikitorBase {
+  /** Root element containing Shikitor's rendered layers. */
   readonly element: HTMLElement
+  /** Textarea used as the editor input, including a host-owned textarea passed to `create()`. */
+  readonly inputElement: HTMLTextAreaElement
   /** Normalized editor input namespace shared by capability plugins. */
   readonly input: ShikitorInputService
   value: string

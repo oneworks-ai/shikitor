@@ -103,7 +103,7 @@ export default definePlugin({
       }
       const cursor = editor._getCursorAbsolutePosition(event.cursor)
       const gutter = root.querySelector<HTMLElement>(':scope > .shikitor-lines')
-      const input = root.querySelector<HTMLTextAreaElement>('textarea.shikitor-input')
+      const input = editor.inputElement
       const lineHeight = Number.parseFloat(
         window?.getComputedStyle(root).getPropertyValue('--line-height') ?? ''
       ) || 22

@@ -1,0 +1,4 @@
+[submodule "vendors/deepseek-ai/deepseek-harness"]
+	path = vendors/deepseek-ai/deepseek-harness
+	url = https://github.com/deepseek-ai/deepseek-harness.git
+	update = none

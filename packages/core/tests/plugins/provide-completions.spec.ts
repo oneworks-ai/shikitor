@@ -1,9 +1,31 @@
 import { describe, expect, it, vi } from 'vitest'
+import { proxy } from 'valtio/vanilla'
 
+import { Context } from '../../src/context'
+import type { Shikitor } from '../../src/editor'
+import type { ShikitorPopupService } from '../../src/plugins/provide-popup'
 import {
   mountCompletionItemIcon,
+  default as provideCompletions,
   resolveCompletionInputKeyword
 } from '../../src/plugins/provide-completions'
+import { getRawTextHelper } from '../../src/utils/getRawTextHelper'
+
+class ResidentTextarea extends EventTarget {
+  value = ''
+  selectionStart = 0
+  selectionEnd = 0
+  readonly add = vi.fn(super.addEventListener.bind(this))
+  readonly remove = vi.fn(super.removeEventListener.bind(this))
+
+  override addEventListener(...args: Parameters<EventTarget['addEventListener']>) {
+    this.add(...args)
+  }
+
+  override removeEventListener(...args: Parameters<EventTarget['removeEventListener']>) {
+    this.remove(...args)
+  }
+}
 
 describe('completion item custom icons', () => {
   it('mounts an image or svg node returned by the consumer', () => {
@@ -36,5 +58,52 @@ describe('completion keyword synchronization', () => {
     expect(resolveCompletionInputKeyword('$mem', 0, 1)).toBeUndefined()
     expect(resolveCompletionInputKeyword('$mem\nnext', 9, 1)).toBeUndefined()
     expect(resolveCompletionInputKeyword('$mem', 8, 1)).toBeUndefined()
+  })
+
+  it('uses and cleans the resident textarea when Shikitor is attached', async () => {
+    const context = new Context()
+    const input = new ResidentTextarea()
+    const rawTextHelper = getRawTextHelper('')
+    const querySelector = vi.fn(() => null)
+    const shikitor = {
+      element: { querySelector },
+      inputElement: input,
+      value: '',
+      cursor: rawTextHelper.resolvePosition(0),
+      rawTextHelper,
+      optionsRef: proxy({
+        current: {
+          cursor: rawTextHelper.resolvePosition(0),
+          language: 'markdown'
+        }
+      }),
+      focus: vi.fn()
+    } as unknown as Shikitor
+    const popupDispose = vi.fn()
+    const popup = {
+      registerPopupProvider: vi.fn(() => ({ dispose: popupDispose }))
+    } as unknown as ShikitorPopupService
+    context.provide('shikitor', shikitor)
+    context.provide('shikitorPopup', popup)
+
+    const fiber = await context.plugin(provideCompletions)
+    const provider = vi.fn(() => ({ suggestions: [] }))
+    context.shikitorCompletions.registerCompletionItemProvider('*', {
+      triggerCharacters: ['$'],
+      provideCompletionItems: provider
+    })
+
+    input.value = '$'
+    input.selectionStart = 1
+    input.selectionEnd = 1
+    input.dispatchEvent(new Event('input'))
+    await vi.waitFor(() => expect(provider).toHaveBeenCalled())
+
+    expect(querySelector).not.toHaveBeenCalled()
+    expect(input.add).toHaveBeenCalledTimes(2)
+
+    await fiber.dispose()
+    expect(input.remove).toHaveBeenCalledTimes(2)
+    expect(popupDispose).toHaveBeenCalledOnce()
   })
 })

@@ -16,6 +16,34 @@ npm install @shikitor/core
 pnpm install @shikitor/core
 ```
 
+## Mounting
+
+`create()` accepts either a container or an existing textarea:
+
+```ts
+import { create } from '@shikitor/core'
+
+const textarea = document.querySelector('textarea')!
+const editor = await create(textarea, {
+  language: 'markdown',
+  onChange(value) {
+    updateHostDraft(value)
+  },
+})
+```
+
+When passed a textarea, Shikitor keeps that exact element as the input and
+adds only a sibling rendering layer. The host remains responsible for the
+textarea value, attributes and event handlers. Disposing the editor removes
+the rendering layer and restores the host DOM:
+
+```ts
+editor[Symbol.dispose]()
+```
+
+Use `editor.inputElement` when a plugin needs the active textarea; it works for
+both container-created and host-owned inputs.
+
 ## Plugins
 
 The plugin runtime is powered by [Cordis](https://github.com/cordiverse/cordis). Define native Cordis plugins with `definePlugin()`, inject the editor as `ctx.shikitor`, and listen to editor lifecycle events through the `shikitor/*` namespace. The editor context is available as `shikitor.context` for dynamic plugin installation, services, nested plugins, and effect cleanup.

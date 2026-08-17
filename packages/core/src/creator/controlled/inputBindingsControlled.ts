@@ -44,6 +44,7 @@ function resolveWidgetLine(element: Element | null) {
 function resolvePositionAtPoint(
   element: Element | null,
   renderedElement: Element | null,
+  target: HTMLElement,
   input: HTMLTextAreaElement,
   rawTextHelper: RawTextHelper,
   clientX?: number,
@@ -60,10 +61,18 @@ function resolvePositionAtPoint(
     caretRangeFromPoint?: (x: number, y: number) => Range | null
   }
   const previousPointerEvents = input.style.pointerEvents
-  input.style.pointerEvents = 'none'
-  const caret = pointDocument.caretPositionFromPoint?.(clientX, clientY)
-  const legacyRange = caret ? undefined : pointDocument.caretRangeFromPoint?.(clientX, clientY)
-  input.style.pointerEvents = previousPointerEvents
+  const previousTargetPointerEvents = target.style.pointerEvents
+  let caret: ReturnType<NonNullable<typeof pointDocument.caretPositionFromPoint>> | undefined
+  let legacyRange: Range | null | undefined
+  try {
+    input.style.pointerEvents = 'none'
+    target.style.pointerEvents = 'auto'
+    caret = pointDocument.caretPositionFromPoint?.(clientX, clientY) ?? undefined
+    legacyRange = caret ? undefined : pointDocument.caretRangeFromPoint?.(clientX, clientY)
+  } finally {
+    input.style.pointerEvents = previousPointerEvents
+    target.style.pointerEvents = previousTargetPointerEvents
+  }
 
   const node = caret?.offsetNode ?? legacyRange?.startContainer
   const nodeOffset = caret?.offset ?? legacyRange?.startOffset
@@ -108,16 +117,22 @@ function resolvePositionAtPoint(
 
 function resolveRenderedElementAtPoint(
   element: Element | null,
+  target: HTMLElement,
   input: HTMLTextAreaElement,
   clientX?: number,
   clientY?: number
 ) {
   if (clientX === undefined || clientY === undefined) return element
   const previousPointerEvents = input.style.pointerEvents
-  input.style.pointerEvents = 'none'
-  const renderedElement = input.ownerDocument.elementFromPoint?.(clientX, clientY) ?? element
-  input.style.pointerEvents = previousPointerEvents
-  return renderedElement
+  const previousTargetPointerEvents = target.style.pointerEvents
+  try {
+    input.style.pointerEvents = 'none'
+    target.style.pointerEvents = 'auto'
+    return input.ownerDocument.elementFromPoint?.(clientX, clientY) ?? element
+  } finally {
+    input.style.pointerEvents = previousPointerEvents
+    target.style.pointerEvents = previousTargetPointerEvents
+  }
 }
 
 export function resolveShikitorInputHit({
@@ -130,7 +145,7 @@ export function resolveShikitorInputHit({
   clientY
 }: ResolveInputHitOptions): ShikitorInputHit {
   const element = eventTarget instanceof Element ? eventTarget : null
-  if (!element || !target.contains(element)) {
+  if (!element || (!target.contains(element) && element !== input)) {
     return { zone: 'outside', element }
   }
 
@@ -205,10 +220,11 @@ export function resolveShikitorInputHit({
     }
   }
 
-  const renderedElement = resolveRenderedElementAtPoint(element, input, clientX, clientY)
+  const renderedElement = resolveRenderedElementAtPoint(element, target, input, clientX, clientY)
   const position = resolvePositionAtPoint(
     element,
     renderedElement,
+    target,
     input,
     rawTextHelper,
     clientX,
@@ -542,14 +558,19 @@ export function inputBindingsControlled({
     'compositionend'
   ] as const
   const listenerOptions: AddEventListenerOptions = { capture: true, passive: false }
+  const pointerTargets: HTMLElement[] = target.contains(input) ? [target] : [target, input]
 
-  rootEventTypes.forEach(type => target.addEventListener(type, route, listenerOptions))
+  pointerTargets.forEach(element => {
+    rootEventTypes.forEach(type => element.addEventListener(type, route, listenerOptions))
+  })
   inputEventTypes.forEach(type => input.addEventListener(type, route, listenerOptions))
 
   return {
     service,
     dispose() {
-      rootEventTypes.forEach(type => target.removeEventListener(type, route, listenerOptions))
+      pointerTargets.forEach(element => {
+        rootEventTypes.forEach(type => element.removeEventListener(type, route, listenerOptions))
+      })
       inputEventTypes.forEach(type => input.removeEventListener(type, route, listenerOptions))
       // Cordis owns the registry lifetime for plugins. Mark the optional
       // provider unavailable immediately as well, so consumers cannot keep
