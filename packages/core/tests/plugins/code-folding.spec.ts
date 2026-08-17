@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   findFoldRanges,
+  isFoldSelectAllShortcut,
+  normalizeFoldedKeyboardOffset,
+  resolveFoldKeyboardSelection,
   resolveFoldScrollMetrics,
   resolveFoldVisualKeyboardOffset,
   resolveFoldVisualOffset,
@@ -50,6 +53,48 @@ describe('code folding ranges', () => {
     expect(resolveFoldVisualKeyboardOffset(boundaries, 34, 'backward')).toBe(26)
     expect(resolveFoldVisualKeyboardOffset(boundaries, 34, 'forward')).toBe(50)
     expect(resolveFoldVisualKeyboardOffset([], 34, 'forward')).toBeUndefined()
+  })
+
+  it('keeps modifier navigation endpoints out of hidden folded source', () => {
+    const intervals = [
+      { start: 26, end: 50 },
+      { start: 70, end: 90 }
+    ]
+
+    expect(normalizeFoldedKeyboardOffset(intervals, 34, 'backward')).toBe(26)
+    expect(normalizeFoldedKeyboardOffset(intervals, 34, 'forward')).toBe(50)
+    expect(normalizeFoldedKeyboardOffset(intervals, 26, 'forward')).toBe(26)
+    expect(normalizeFoldedKeyboardOffset(intervals, 50, 'backward')).toBe(50)
+    expect(normalizeFoldedKeyboardOffset(intervals, 60, 'forward')).toBe(60)
+  })
+
+  it('only preserves the selection anchor for shift-modified navigation', () => {
+    expect(resolveFoldKeyboardSelection(26, 50, false)).toEqual({
+      anchor: 50,
+      focus: 50
+    })
+    expect(resolveFoldKeyboardSelection(26, 50, true)).toEqual({
+      anchor: 26,
+      focus: 50
+    })
+  })
+
+  it('recognizes platform select-all without consuming modified variants', () => {
+    const shortcut = (overrides: Partial<KeyboardEvent>) => isFoldSelectAllShortcut({
+      altKey: false,
+      ctrlKey: false,
+      key: 'a',
+      metaKey: false,
+      shiftKey: false,
+      ...overrides
+    })
+
+    expect(shortcut({ metaKey: true })).toBe(true)
+    expect(shortcut({ ctrlKey: true })).toBe(true)
+    expect(shortcut({ metaKey: true, key: 'A' })).toBe(true)
+    expect(shortcut({ metaKey: true, shiftKey: true })).toBe(false)
+    expect(shortcut({ ctrlKey: true, altKey: true })).toBe(false)
+    expect(shortcut({ metaKey: true, key: 'ArrowLeft' })).toBe(false)
   })
 
   it('lets a composed folded line own horizontal scrolling', () => {

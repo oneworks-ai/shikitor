@@ -1,9 +1,9 @@
 import { transformerRenderWhitespace } from '@shikijs/transformers'
-import { getHighlighter } from 'shiki'
+import { createHighlighter } from 'shiki'
 
 import { shikitorStructureTransformer } from '../../creator/structureTransfomer'
 
-type HighlighterPromise = ReturnType<typeof getHighlighter>
+type HighlighterPromise = ReturnType<typeof createHighlighter>
 
 export class DiffSyntaxRenderer {
   private highlighters = new Map<string, HighlighterPromise>()
@@ -12,7 +12,7 @@ export class DiffSyntaxRenderer {
     const key = `${theme}\0${language}`
     let highlighter = this.highlighters.get(key)
     if (!highlighter) {
-      highlighter = getHighlighter({ themes: [theme], langs: [language] })
+      highlighter = createHighlighter({ themes: [theme], langs: [language] })
       this.highlighters.set(key, highlighter)
       void highlighter.catch(() => this.highlighters.delete(key))
     }
@@ -42,4 +42,3 @@ export class DiffSyntaxRenderer {
     this.highlighters.clear()
   }
 }
-

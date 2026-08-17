@@ -2,6 +2,36 @@ import { describe, expect, test, vi } from 'vitest'
 
 import { Context, definePlugin } from '../src'
 import type { Shikitor } from '../src'
+import { resolveUpdatedPluginInputs } from '../src/creator/controlled/pluginsControlled'
+
+describe('plugin option updates', () => {
+  const plugin = definePlugin({ name: 'identity-plugin' })
+  const replacement = definePlugin({ name: 'replacement-plugin' })
+  const previous = [[plugin, { enabled: true }] as const]
+  const previousSnapshot = Object.freeze([
+    Object.freeze([plugin, Object.freeze({ enabled: true })])
+  ])
+
+  test('keeps live plugin identities when an updater spreads its options snapshot', () => {
+    expect(resolveUpdatedPluginInputs(
+      previous,
+      previousSnapshot,
+      previousSnapshot,
+      true
+    )).toBe(previous)
+  })
+
+  test('keeps plugins when a partial options update omits them', () => {
+    expect(resolveUpdatedPluginInputs(previous, undefined, previousSnapshot, false)).toBe(previous)
+  })
+
+  test('replaces or clears plugins only when the update explicitly requests it', () => {
+    const next = [replacement]
+    expect(resolveUpdatedPluginInputs(previous, next, previousSnapshot, true)).toEqual(next)
+    expect(resolveUpdatedPluginInputs(previous, next, previousSnapshot, true)).not.toBe(next)
+    expect(resolveUpdatedPluginInputs(previous, undefined, previousSnapshot, true)).toEqual([])
+  })
+})
 
 describe('Cordis plugin runtime', () => {
   test('injects the editor and disposes plugin effects', async () => {

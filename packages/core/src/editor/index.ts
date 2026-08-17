@@ -1,4 +1,4 @@
-import type { DecorationItem } from '@shikijs/core'
+import type { DecorationItem } from '@shikijs/types'
 import type { BundledLanguage, BundledTheme } from 'shiki'
 
 import type { _KeyboardEvent, RefObject, TextRange } from '../base'
@@ -11,6 +11,8 @@ import type { RawTextHelper } from '../utils/getRawTextHelper'
 import type { Cursor, ResolvedCursor, ResolvedSelection, Selection } from './base'
 
 export * from './base'
+
+export type ShikitorRenderMode = 'all-dom' | 'auto' | 'less-dom'
 
 export interface InlineReplacement {
   /** Source range that remains authoritative for editing and copy. */
@@ -27,6 +29,27 @@ export interface InlineReplacement {
   interaction?: 'atomic' | 'mapped'
   /** HTML properties applied to the rendered replacement wrapper. */
   properties?: DecorationItem['properties']
+}
+
+export interface HighlightLineRange {
+  /** One-based first source line, inclusive. */
+  start: number
+  /** One-based last source line, inclusive. */
+  end: number
+}
+
+export interface ShikitorHighlight {
+  /** CSS color painted behind every configured target. */
+  color: string
+  /**
+   * Full-line targets. Numbers are one-based source lines; ranges are
+   * inclusive. A rule may mix isolated lines and ranges.
+   */
+  lines?: Array<number | HighlightLineRange>
+  /** Source ranges painted behind text without changing the raw value. */
+  ranges?: TextRange[]
+  /** Optional class applied to the full-line marker and range wrapper. */
+  className?: string
 }
 
 interface ShikitorEvents {
@@ -51,12 +74,18 @@ export interface ShikitorOptions extends ShikitorEvents {
   highlightCurrentLine?: boolean
   /**
    * Background color used to highlight the active line.
+   * @default the current theme foreground at 12% opacity
    */
   currentLineHighlightColor?: string
   /**
    * @default false
    */
   hideSelfCursorUsername?: boolean
+  /**
+   * Focus the editor after creation. Updating this option from `false` to
+   * `true` also focuses an editor that is currently blurred. @default false
+   */
+  autoFocus?: boolean
   placeholder?: string
   /**
    * @default false
@@ -75,7 +104,18 @@ export interface ShikitorOptions extends ShikitorEvents {
   }
   readOnly?: boolean
   theme?: BundledTheme
+  /**
+   * Rendering strategy. `auto` uses native form-control highlights when the
+   * browser and active editor features support them, otherwise it falls back
+   * to the complete DOM projection. @default auto
+   */
+  renderMode?: ShikitorRenderMode
   decorations?: DecorationItem[]
+  /**
+   * Paint full source lines or exact source ranges with custom colors.
+   * Later full-line rules win when targets overlap.
+   */
+  highlights?: ShikitorHighlight[]
   /**
    * Replace source ranges visually without changing the textarea value.
    * Pair this option with the inline-replacements plugin so caret and

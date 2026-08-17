@@ -1,9 +1,8 @@
 import './App.scss'
 
+import type { ComponentType, LazyExoticComponent } from 'react'
 import React, {
-  type ComponentType,
   lazy,
-  type LazyExoticComponent,
   Suspense,
   useLayoutEffect,
   useMemo,
@@ -11,6 +10,7 @@ import React, {
 } from 'react'
 import {
   ChatIcon,
+  ChartLineDataIcon,
   CheckCircleFilledIcon,
   ChevronDownIcon,
   CodeIcon,
@@ -31,6 +31,7 @@ type ComponentId =
   | 'code-editor-live-renderer'
   | 'code-editor-input-events'
   | 'code-editor-diff'
+  | 'code-editor-benchmark'
   | 'code-editor-typescript-lsp'
   | 'Markdown Editor'
   | 'Messenger'
@@ -129,6 +130,18 @@ const components: ComponentGroup[] = [
         descriptionKey: 'component.markdownEditor.description',
         icon: Edit1Icon,
         component: lazy(() => import('./examples/MarkdownEditor'))
+      }
+    ]
+  },
+  {
+    labelKey: 'nav.benchmarks',
+    children: [
+      {
+        id: 'code-editor-benchmark',
+        titleKey: 'nav.benchmark',
+        descriptionKey: 'component.benchmark.description',
+        icon: ChartLineDataIcon,
+        component: lazy(() => import('./examples/Benchmark'))
       }
     ]
   }

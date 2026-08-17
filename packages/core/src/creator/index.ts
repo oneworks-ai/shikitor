@@ -7,6 +7,7 @@ import { proxy, snapshot } from 'valtio/vanilla'
 import type { _KeyboardEvent } from '../base'
 import type { ResolvedSelection, Shikitor, ShikitorBase, ShikitorInternal, ShikitorOptions } from '../editor'
 import type { ShikitorInputService } from '../input'
+import type { ShikitorSyntaxWorker } from '../syntaxWorker'
 import { callUpdateDispatcher, completeAssign, listen } from '../utils' with {
   'unbundled-reexport': 'on'
 }
@@ -16,11 +17,13 @@ import { scoped } from '../utils/valtio/scoped'
 import { cursorControlled } from './controlled/cursorControlled'
 import { inputBindingsControlled } from './controlled/inputBindingsControlled'
 import { initDom, outputRenderControlled } from './controlled/outputRenderControlled'
-import { pluginsControlled } from './controlled/pluginsControlled'
+import { pluginsControlled, resolveUpdatedPluginInputs } from './controlled/pluginsControlled'
 import { valueControlled } from './controlled/valueControlled'
 
 export interface CreateOptions {
   abort?: AbortSignal
+  /** Optional off-main-thread syntax service. The caller owns its lifecycle. */
+  syntaxWorker?: ShikitorSyntaxWorker
 }
 
 export async function create(
@@ -64,7 +67,7 @@ export async function create(
       throw new Error('Aborted')
     }
   }
-  await new Promise(resolve => setTimeout(resolve, 0))
+  await Promise.resolve()
   checkAborted()
 
   const dom = initDom(mount)
@@ -103,6 +106,7 @@ export async function create(
   } = cursorControlled(
     () => shikitor,
     target,
+    input,
     rawTextHelperRef,
     optionsRef,
     cursor => {
@@ -166,13 +170,15 @@ export async function create(
   disposes.push(listen(document, 'selectionchange', e => {
     if (!shikitor) return
     const { focusNode } = document.getSelection() ?? {}
-    const belongsToEditor = (node: EventTarget | null | undefined) =>
-      node === input
-      || (node instanceof HTMLElement && node.closest(`.${'shikitor'}`) === target)
     if (
-      document.activeElement !== input
-      && !belongsToEditor(focusNode)
-      && !belongsToEditor(e.target)
+      (
+        !(focusNode instanceof HTMLElement)
+        || focusNode.closest(`.${'shikitor'}`) !== target
+      )
+      && (
+        !(e.target instanceof HTMLElement)
+        || e.target.closest(`.${'shikitor'}`) !== target
+      )
     ) return
 
     const { resolvePosition } = shikitor.rawTextHelper
@@ -197,8 +203,8 @@ export async function create(
   }))
 
   disposes.push(outputRenderControlled(
-    { target, lines, output },
-    { valueRef, cursorRef, optionsRef }
+    { target, input, lines, output },
+    { valueRef, cursorRef, optionsRef, syntaxWorker: options.syntaxWorker }
   ))
 
   const shikitorInternal: ShikitorInternal = {
@@ -212,6 +218,7 @@ export async function create(
         white-space: pre-wrap;
         word-wrap: break-word;
         overflow-wrap: break-word;
+        visibility: hidden;
       `
       const style = getComputedStyle(input)
       ;[
@@ -236,18 +243,15 @@ export async function create(
       )
       const reallyLine = cursor.line + lineOffset - 1
       const computedLine = Math.max(reallyLine, 0)
-      const text = '\n'.repeat(computedLine) + line(cursor).substring(0, cursor.character)
+      const text = line(cursor).substring(0, cursor.character)
       const inTheLineStart = cursor.character === 0
-      span.textContent = inTheLineStart ? text + ' ' : text
+      span.textContent = inTheLineStart
+        ? `${'\n'.repeat(computedLine)} `
+        : `${'\n'.repeat(computedLine)}${text}`
       document.body.appendChild(span)
       const rect = span.getBoundingClientRect()
       document.body.removeChild(span)
       const inputStyle = getComputedStyle(input)
-      // An attached editor copies the host textarea's border and padding onto
-      // the rendering root, so its container origin is already the textarea's
-      // content origin. Adding the textarea inset again makes the cursor jump
-      // after the first selection update (the initial pre-editor render uses
-      // 0,0 and masks the error until then).
       const left = dom.attached
         ? 0
         : parseInt(inputStyle.marginLeft) + parseInt(inputStyle.paddingLeft)
@@ -255,12 +259,8 @@ export async function create(
         ? 0
         : parseInt(inputStyle.marginTop) + parseInt(inputStyle.paddingTop)
       return {
-        x: (
-          inTheLineStart ? 0 : rect.right
-        ) + left,
-        y: (
-          reallyLine === -1 ? 0 : rect.bottom
-        ) + top
+        x: (inTheLineStart ? 0 : rect.right) + left,
+        y: (reallyLine === -1 ? 0 : rect.bottom) + top
       }
     }
   }
@@ -296,11 +296,16 @@ export async function create(
       this.updateOptions(newOptions)
     },
     async updateOptions(newOptions) {
+      const previousOptions = this.options
+      const updatedOptions = callUpdateDispatcher(newOptions, previousOptions) ?? {}
+      const shouldAutoFocus = updatedOptions.autoFocus === true
+        && previousOptions.autoFocus !== true
+      const pluginsProvided = Object.prototype.hasOwnProperty.call(updatedOptions, 'plugins')
       const {
         cursor,
         plugins,
         ...resolvedOptions
-      } = callUpdateDispatcher(newOptions, this.options) ?? {}
+      } = updatedOptions
       let newCursor = optionsRef.current.cursor
       if (cursor !== undefined) {
         const { resolvePosition } = this.rawTextHelper
@@ -311,7 +316,15 @@ export async function create(
       optionsRef.current = {
         ...resolvedOptions,
         cursor: newCursor,
-        plugins: [...plugins ?? []]
+        plugins: resolveUpdatedPluginInputs(
+          optionsRef.current.plugins,
+          plugins,
+          previousOptions.plugins,
+          pluginsProvided
+        )
+      }
+      if (shouldAutoFocus && document.activeElement !== input) {
+        this.focus(newCursor)
       }
     },
     get language() {
@@ -386,21 +399,8 @@ export async function create(
       const resolvedStart = resolvePosition(start)
       const resolvedEnd = resolvePosition(end)
       input.setRangeText(text, resolvedStart.offset, resolvedEnd.offset, 'end')
-      input.dispatchEvent(typeof InputEvent === 'undefined'
-        ? new Event('input', { bubbles: true })
-        : new InputEvent('input', {
-            bubbles: true,
-            data: text,
-            inputType: 'insertText'
-          }))
-      const defer = Promise.withResolvers<void>()
-      const dispose = scopeWatch(get => {
-        // noinspection BadExpressionStatementJS
-        get(valueRef).current
-        defer.resolve()
-        dispose()
-      })
-      return defer.promise
+      input.dispatchEvent(new Event('input'))
+      return Promise.resolve()
     }
   }
   const base = completeAssign(
@@ -457,5 +457,8 @@ export async function create(
     context.emit('shikitor/blur')
     onBlurred?.()
   })
+  if (inputOptions.autoFocus && document.activeElement !== input) {
+    shikitor.focus(inputOptions.cursor)
+  }
   return shikitor
 }

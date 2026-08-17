@@ -10,6 +10,7 @@
   transition: .1s;
 
   overflow: hidden;
+
   &--attached {
     position: absolute;
     inset: 0;
@@ -46,6 +47,150 @@
       pointer-events: auto;
     }
   }
+
+  &--line-highlights {
+    isolation: isolate;
+
+    > .shikitor-lines,
+    > .shikitor-container {
+      position: relative;
+      z-index: 1;
+    }
+
+    &.shikitor--less-dom {
+      &::before {
+        z-index: 1;
+      }
+
+      > .shikitor-lines,
+      > .shikitor-container {
+        z-index: 2;
+      }
+    }
+  }
+
+  &-line-highlights {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  &-line-highlight {
+    position: absolute;
+    right: 0;
+    left: 0;
+    pointer-events: none;
+  }
+
+  &-line-highlighted {
+    background-color: var(--shikitor-line-highlight-color);
+  }
+
+  &-range-highlight {
+    border-radius: 2px;
+    background-color: var(--shikitor-highlight-color);
+  }
+
+  &--less-dom {
+    isolation: isolate;
+
+    &::before {
+      content: '';
+      position: absolute;
+      z-index: 0;
+      top: calc(
+        var(--shikitor-content-offset-top, 0px) +
+        var(--shikitor-current-line-top, 0px)
+      );
+      left: 0;
+      width: 100%;
+      height: var(--line-height);
+      background: var(
+        --shikitor-current-line-color,
+        color-mix(in oklch, var(--shikitor-fg-color, currentcolor), transparent 88%)
+      );
+      pointer-events: none;
+    }
+
+    &.hide-current-line::before {
+      display: none;
+    }
+
+    > .shikitor-lines,
+    > .shikitor-container {
+      position: relative;
+      z-index: 1;
+    }
+
+    &.shikitor--less-dom-native .shikitor-output {
+      display: none;
+    }
+
+    &.shikitor--less-dom-native .shikitor-input {
+      color: var(--shikitor-native-fg-color, currentcolor);
+
+      &::selection {
+        color: var(--shikitor-native-fg-color, currentcolor);
+      }
+    }
+
+    &.shikitor--less-dom-pending {
+      .shikitor-output { display: none; }
+
+      .shikitor-input {
+        color: currentcolor;
+
+        &::selection { color: currentcolor; }
+      }
+    }
+
+    &.shikitor--less-dom-bridge .shikitor-output-lines {
+      display: block;
+      white-space: pre;
+    }
+
+    .shikitor-less-dom-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  &.line-numbers &-lines--compact {
+    box-sizing: border-box;
+    flex: 0 0 calc(var(--shikitor-line-digit-count, 1ch) + 20px);
+    width: calc(var(--shikitor-line-digit-count, 1ch) + 20px);
+    padding: 0 10px;
+    overflow: hidden;
+    white-space: pre;
+    text-align: right;
+    font-family: var(--font-family, monospace), serif;
+    user-select: none;
+  }
+
+  &.line-numbers &-lines--virtual {
+    box-sizing: border-box;
+    position: relative;
+    flex: 0 0 calc(var(--shikitor-line-digit-count, 1ch) + 20px);
+    width: calc(var(--shikitor-line-digit-count, 1ch) + 20px);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  &:not(.line-numbers) &-lines--virtual {
+    display: none;
+  }
+
+  &-gutter-viewport {
+    position: absolute;
+    inset: 0 0 auto;
+  }
+
+  &:not(.line-numbers) &-lines--compact {
+    display: none;
+  }
   &-bg-lighting {
     position: relative;
     &::before {
@@ -81,6 +226,8 @@
   }
   &-gutter-line {
     display: flex;
+    content-visibility: auto;
+    contain-intrinsic-block-size: var(--line-height);
     &-number {
       width: 0;
 
@@ -93,8 +240,14 @@
   &-gutter-line-highlighted,
   &-output-line-highlighted {
     background-image: linear-gradient(
-      var(--shikitor-current-line-color, var(--shikitor-fg-color-op7)),
-      var(--shikitor-current-line-color, var(--shikitor-fg-color-op7))
+      var(
+        --shikitor-current-line-color,
+        color-mix(in oklch, var(--shikitor-fg-color, currentcolor), transparent 88%)
+      ),
+      var(
+        --shikitor-current-line-color,
+        color-mix(in oklch, var(--shikitor-fg-color, currentcolor), transparent 88%)
+      )
     );
   }
   &-container {
@@ -113,11 +266,6 @@
     white-space: pre;
     line-height: var(--line-height);
   }
-  &-input--attached {
-    color: transparent !important;
-    caret-color: transparent !important;
-    background-color: transparent !important;
-  }
   &-output {
     height: 100%;
     overflow: hidden;
@@ -131,21 +279,35 @@
       min-width: 100%;
       flex-direction: column;
       line-height: var(--line-height);
+
+      &--virtual {
+        position: relative;
+        display: block;
+      }
+    }
+
+    &-viewport {
+      position: absolute;
+      inset: 0 auto auto 0;
+      display: flex;
+      width: max-content;
+      min-width: 100%;
+      flex-direction: column;
     }
     &-line {
       position: relative;
       min-width: 100%;
+      content-visibility: auto;
+      contain-intrinsic-block-size: var(--line-height);
     }
-    .tab, .space {
+    .tab {
       position: relative;
+    }
+    .space {
+      opacity: .3;
     }
     .tab::before {
       content: '⇥';
-      position: absolute;
-      opacity: .3;
-    }
-    .space::before {
-      content: '·';
       position: absolute;
       opacity: .3;
     }
@@ -157,8 +319,14 @@
   }
   &-cursors {
     position: absolute;
+    z-index: 10;
     width: 100%;
     height: 100%;
+    // The custom caret follows the full source coordinate even while the
+    // viewport is horizontally scrolled. Clip it at the code viewport edge so
+    // it cannot paint over the sibling gutter, while leaving enough vertical
+    // room for the cursor username label above the active line.
+    clip-path: inset(-20px 0);
     pointer-events: none;
     user-select: none;
   }
@@ -178,6 +346,9 @@
       --cursor-width: 1ch;
     }
     &#{&}--visible::after {
+      visibility: visible;
+    }
+    &#{&}--keyboard-reveal::after {
       visibility: visible;
     }
     &::after {
@@ -244,6 +415,11 @@
   }
   &.hide-self-cursor-username {
     .shikitor-cursor__username {
+      display: none;
+    }
+  }
+  &:not(.shikitor--focused) {
+    .shikitor-cursor__username--you {
       display: none;
     }
   }

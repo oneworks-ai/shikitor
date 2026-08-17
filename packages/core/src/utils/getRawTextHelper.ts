@@ -1,4 +1,4 @@
-import type { OffsetOrPosition, ResolvedPosition } from '@shikijs/core'
+import type { OffsetOrPosition, ResolvedPosition } from '@shikijs/types'
 
 import type { ResolvedTextRange, TextRange } from '../base'
 

@@ -2,6 +2,7 @@ import './code-folding.scss'
 
 import { definePlugin } from '@shikitor/core'
 
+import { insertGutterDecorationSlot } from './_internal/gutter-decoration-slot'
 import { installCursorGeometryLayer } from './cursor-geometry-layer'
 
 export interface CodeFoldingOptions {
@@ -112,6 +113,11 @@ export function resolveFoldVisualOffset(
 
 export type FoldVisualNavigationDirection = 'backward' | 'forward'
 
+export interface FoldSourceInterval {
+  end: number
+  start: number
+}
+
 function orderedFoldVisualBoundaries(boundaries: readonly FoldVisualBoundary[]) {
   return boundaries
     .filter(boundary => Number.isFinite(boundary.x) && Number.isFinite(boundary.offset))
@@ -169,6 +175,45 @@ export function resolveFoldVisualKeyboardOffset(
         boundary.offset < closest.offset ? boundary : closest).offset
     : candidates.reduce((closest, boundary) =>
         boundary.offset > closest.offset ? boundary : closest).offset
+}
+
+/**
+ * Keep native word/document navigation out of source hidden by a folded
+ * placeholder. The browser still owns platform-specific shortcut semantics;
+ * only an endpoint strictly inside an atomic visual interval is corrected.
+ */
+export function normalizeFoldedKeyboardOffset(
+  intervals: readonly FoldSourceInterval[],
+  offset: number,
+  direction: FoldVisualNavigationDirection
+) {
+  const containing = intervals
+    .filter(interval => interval.start < offset && offset < interval.end)
+    .sort((left, right) =>
+      (right.end - right.start) - (left.end - left.start)
+    )[0]
+  if (!containing) return offset
+  return direction === 'forward' ? containing.end : containing.start
+}
+
+export function resolveFoldKeyboardSelection(
+  anchor: number,
+  focus: number,
+  extend: boolean
+) {
+  return {
+    anchor: extend ? anchor : focus,
+    focus
+  }
+}
+
+export function isFoldSelectAllShortcut(
+  event: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>
+) {
+  return !event.altKey
+    && !event.shiftKey
+    && (event.metaKey || event.ctrlKey)
+    && event.key.toLowerCase() === 'a'
 }
 
 const closingBracket: Record<string, string> = {
@@ -410,6 +455,7 @@ export default definePlugin({
     const gutters = target.querySelector('.shikitor-lines') as HTMLElement
     const input = shikitor.inputElement
     const container = target.querySelector('.shikitor-container') as HTMLElement
+    const cursorElement = target.querySelector('.shikitor-cursor:first-child') as HTMLElement
     const selectionLayer = document.createElement('div')
     const scrollTrack = document.createElement('div')
     const scrollThumb = document.createElement('div')
@@ -419,6 +465,7 @@ export default definePlugin({
     let ranges: FoldRange[] = []
     let initialized = false
     let renderFrame: number | undefined
+    let postRenderScrollFrame: number | undefined
     let renderPending = true
     let visualMaxScrollTop = 0
     let visualMaxScrollLeft = 0
@@ -523,8 +570,11 @@ export default definePlugin({
       horizontalScrollThumb.style.transform = `translateX(${metrics.thumbTop}px)`
     }
 
-    function syncVisualScroll(requestedScrollTop = input.scrollTop) {
-      syncHorizontalScroll()
+    function syncVisualScroll(
+      requestedScrollTop = input.scrollTop,
+      requestedScrollLeft?: number
+    ) {
+      syncHorizontalScroll(requestedScrollLeft)
       if (collapsed.size === 0) {
         visualMaxScrollTop = 0
         scrollTrack.hidden = true
@@ -597,7 +647,12 @@ export default definePlugin({
               const containerRect = container.getBoundingClientRect()
               const lineRect = outputLine.getBoundingClientRect()
               return {
-                x: x - containerRect.left + visualScrollLeft,
+                // DOM ranges are measured in the output's current viewport.
+                // Use the scroll value that actually produced that rect, not
+                // the desired visual offset, because an async decoration
+                // render can briefly reset output.scrollLeft before the fold
+                // projection restores it on the next frame.
+                x: x - containerRect.left + output.scrollLeft,
                 y: lineRect.bottom - containerRect.top + input.scrollTop + lineOffset * lineRect.height
               }
             }
@@ -876,6 +931,11 @@ export default definePlugin({
 
     function render() {
       renderFrame = undefined
+      if (postRenderScrollFrame !== undefined) {
+        cancelAnimationFrame(postRenderScrollFrame)
+        postRenderScrollFrame = undefined
+      }
+      const preservedScrollLeft = visualScrollLeft
       observer.disconnect()
       output.querySelectorAll<HTMLElement>('.shikitor-fold-line-content')
         .forEach(content => content.replaceWith(...content.childNodes))
@@ -883,7 +943,7 @@ export default definePlugin({
         '.shikitor-fold-placeholder, .shikitor-fold-suffix'
       )
         .forEach(element => element.remove())
-      gutters.querySelectorAll<HTMLElement>('.shikitor-fold-toggle')
+      gutters.querySelectorAll<HTMLElement>('.shikitor-fold-toggle-slot')
         .forEach(element => element.remove())
       target.querySelectorAll<HTMLElement>('.shikitor-output-line, .shikitor-gutter-line')
         .forEach(element => {
@@ -892,10 +952,18 @@ export default definePlugin({
           delete element.dataset.foldPresentation
         })
 
+      for (const gutter of gutters.querySelectorAll<HTMLElement>('.shikitor-gutter-line')) {
+        const number = gutter.querySelector<HTMLElement>('.shikitor-gutter-line-number')
+        if (!number) continue
+        const slot = insertGutterDecorationSlot(number, 'left')
+        slot.classList.add('shikitor-fold-toggle-slot')
+      }
+
       for (const range of [...ranges].reverse()) {
         const gutter = gutters.querySelector<HTMLElement>(`[data-line="${range.startLine}"]`)
         const outputLine = output.querySelector<HTMLElement>(`[data-line="${range.startLine}"]`)
-        if (!gutter || !outputLine) continue
+        const toggleSlot = gutter?.querySelector<HTMLElement>('.shikitor-fold-toggle-slot')
+        if (!gutter || !outputLine || !toggleSlot) continue
         const isCollapsed = collapsed.has(range.startLine)
         const toggle = document.createElement('button')
         toggle.type = 'button'
@@ -908,7 +976,7 @@ export default definePlugin({
           ? isCollapsed ? 'unfold_more' : 'unfold_less'
           : isCollapsed ? 'chevron_right' : 'expand_more'
         toggle.innerHTML = `<span class="shikitor-icon">${icon}</span>`
-        gutter.prepend(toggle)
+        toggleSlot.append(toggle)
 
         if (!isCollapsed) continue
         for (let line = range.startLine + 1; line <= range.endLine; line++) {
@@ -973,7 +1041,15 @@ export default definePlugin({
       observer.observe(gutters, { childList: true, subtree: true })
       renderPending = false
       target.classList.remove('shikitor--fold-rendering')
-      syncVisualScroll()
+      // Replacing fold placeholders changes the output's intrinsic width.
+      // Browsers can expose the temporary viewport width until the next
+      // layout frame; clamping against that transient measurement resets a
+      // valid horizontal scroll to zero during pointer selection. Preserve
+      // the visual owner's offset and reconcile it once layout has settled.
+      postRenderScrollFrame = requestAnimationFrame(() => {
+        postRenderScrollFrame = undefined
+        syncVisualScroll(input.scrollTop, preservedScrollLeft)
+      })
       renderSelection()
       const cursorPosition = shikitor._getCursorAbsolutePosition(shikitor.cursor, -1)
       target.style.setProperty('--shikitor-cursor-t', `${cursorPosition.y}px`)
@@ -1144,7 +1220,10 @@ export default definePlugin({
     horizontalScrollTrack.addEventListener('pointermove', onHorizontalScrollbarPointerMove)
     horizontalScrollTrack.addEventListener('pointerup', onHorizontalScrollbarPointerUp)
     horizontalScrollTrack.addEventListener('pointercancel', onHorizontalScrollbarPointerUp)
-    const resizeObserver = new ResizeObserver(() => syncVisualScroll())
+    const resizeObserver = new ResizeObserver(() => {
+      if (renderPending || postRenderScrollFrame !== undefined) return
+      syncVisualScroll()
+    })
     resizeObserver.observe(container)
     let pointerAnchor: number | undefined
     let mappedPointerOffset: number | undefined
@@ -1358,6 +1437,16 @@ export default definePlugin({
     const lineHasFoldedVisuals = (line: number) => !!output
       .querySelector<HTMLElement>(`[data-line="${line}"]`)
       ?.querySelector('.shikitor-fold-placeholder')
+    const visibleFoldSourceIntervals = () => [...output.querySelectorAll<HTMLElement>(
+      '.shikitor-fold-placeholder[data-fold-source-start][data-fold-source-end]'
+    )].flatMap(placeholder => {
+      const line = placeholder.closest<HTMLElement>('.shikitor-output-line')
+      const start = Number(placeholder.dataset.foldSourceStart)
+      const end = Number(placeholder.dataset.foldSourceEnd)
+      return line?.hidden || !Number.isFinite(start) || !Number.isFinite(end) || end <= start
+        ? []
+        : [{ start, end }]
+    })
     const rememberKeyboardOffset = (offset: number) => {
       mappedKeyboardOffset = offset
       mappedKeyboardExpiresAt = performance.now() + 500
@@ -1368,25 +1457,146 @@ export default definePlugin({
       }
       return { anchor: input.selectionStart, focus: input.selectionEnd }
     }
+    let keyboardVisibilityFrame: number | undefined
+    let keyboardNormalizationFrame: number | undefined
+    let keyboardRevealTimer: ReturnType<typeof setTimeout> | undefined
+    const ensureKeyboardFocusVisible = () => {
+      keyboardVisibilityFrame = undefined
+      if (document.activeElement !== input) return
+      cursorElement.classList.add('shikitor-cursor--keyboard-reveal')
+      if (keyboardRevealTimer !== undefined) clearTimeout(keyboardRevealTimer)
+      keyboardRevealTimer = setTimeout(() => {
+        keyboardRevealTimer = undefined
+        cursorElement.classList.remove('shikitor-cursor--keyboard-reveal')
+      }, 500)
+      const cursorRect = cursorElement.getBoundingClientRect()
+      const viewportRect = container.getBoundingClientRect()
+      const safeViewportRight = viewportRect.right - 24
+
+      if (cursorRect.left < viewportRect.left) {
+        const overflow = viewportRect.left - cursorRect.left
+        syncHorizontalScroll(Math.max(0, visualScrollLeft - overflow - 12))
+      } else if (cursorRect.right > safeViewportRight) {
+        const overflow = cursorRect.right - safeViewportRight
+        syncHorizontalScroll(visualScrollLeft + overflow + 10)
+      }
+      if (cursorRect.top < viewportRect.top) {
+        syncVisualScroll(Math.max(0, input.scrollTop - (viewportRect.top - cursorRect.top)))
+      } else if (cursorRect.bottom > viewportRect.bottom) {
+        syncVisualScroll(input.scrollTop + cursorRect.bottom - viewportRect.bottom)
+      }
+    }
+    const scheduleKeyboardFocusVisibility = () => {
+      if (keyboardVisibilityFrame !== undefined) {
+        cancelAnimationFrame(keyboardVisibilityFrame)
+      }
+      // The native textarea selection settles before the custom caret layer.
+      // Wait one extra paint so modifier navigation (Meta/Alt/Ctrl) reveals
+      // the caret drawn for the final selection instead of its previous rect.
+      keyboardVisibilityFrame = requestAnimationFrame(() => {
+        keyboardVisibilityFrame = requestAnimationFrame(ensureKeyboardFocusVisible)
+      })
+    }
     const applyKeyboardSelection = (anchor: number, focus: number) => {
       rememberKeyboardOffset(focus)
       applySelection(anchor, focus)
-      queueMicrotask(() => {
-        const cursor = shikitor.rawTextHelper.resolvePosition(focus)
-        const position = shikitor._getCursorAbsolutePosition(cursor)
-        const viewportStart = visualScrollLeft
-        const viewportEnd = viewportStart + container.clientWidth - 24
-        if (position.x < viewportStart) syncHorizontalScroll(Math.max(0, position.x - 12))
-        else if (position.x > viewportEnd) {
-          syncHorizontalScroll(position.x - container.clientWidth + 36)
-        }
-      })
+      scheduleKeyboardFocusVisibility()
+    }
+    const onSelectAllKeyDown = (event: KeyboardEvent) => {
+      if (collapsed.size === 0 || !isFoldSelectAllShortcut(event)) return
+      // Do not depend on the host/browser's native select-all command. A
+      // folded editor owns its visual selection layer, and some hosts consume
+      // Command/Ctrl+A before the textarea's native `select` event settles.
+      // Committing the complete raw range here keeps the textarea, editor
+      // model and folded projection in the same deterministic state.
+      event.preventDefault()
+      rememberKeyboardOffset(shikitor.value.length)
+      applySelection(0, shikitor.value.length)
+    }
+    let pendingModifierNavigation: {
+      direction: FoldVisualNavigationDirection
+      extend: boolean
+      originFocus: number
+    } | undefined
+    const normalizeModifierNavigation = () => {
+      keyboardNormalizationFrame = undefined
+      const pending = pendingModifierNavigation
+      pendingModifierNavigation = undefined
+      if (!pending || document.activeElement !== input) return
+      const selection = selectionAnchorAndFocus()
+      const intervals = visibleFoldSourceIntervals()
+      let focus = normalizeFoldedKeyboardOffset(
+        intervals,
+        selection.focus,
+        pending.direction
+      )
+      // Some native word shortcuts stop at the raw newline that also marks a
+      // placeholder edge. A repeated shortcut must cross the atomic visual
+      // unit instead of remaining stuck on the same invisible source stop.
+      if (focus === pending.originFocus && focus === selection.focus) {
+        const edge = intervals.find(interval => pending.direction === 'forward'
+          ? interval.start === focus
+          : interval.end === focus)
+        if (edge) focus = pending.direction === 'forward' ? edge.end : edge.start
+      }
+      if (focus === selection.focus) return
+      const next = resolveFoldKeyboardSelection(selection.anchor, focus, pending.extend)
+      applyKeyboardSelection(next.anchor, next.focus)
+    }
+    const scheduleModifierNavigationNormalization = (
+      direction: FoldVisualNavigationDirection,
+      originFocus: number,
+      extend: boolean
+    ) => {
+      if (keyboardNormalizationFrame !== undefined) {
+        cancelAnimationFrame(keyboardNormalizationFrame)
+        normalizeModifierNavigation()
+      }
+      pendingModifierNavigation = { direction, extend, originFocus }
+      keyboardNormalizationFrame = requestAnimationFrame(normalizeModifierNavigation)
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (collapsed.size === 0) return
       if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-      if (event.altKey || event.metaKey || event.ctrlKey) return
       const selection = selectionAnchorAndFocus()
+      const modifierDirection: FoldVisualNavigationDirection = [
+        'ArrowLeft',
+        'ArrowUp',
+        'Home'
+      ].includes(event.key) ? 'backward' : 'forward'
+      if (event.altKey || event.metaKey || event.ctrlKey) {
+        const currentLine = visibleLineForOffset(selection.focus)
+        const currentBoundaries = lineHasFoldedVisuals(currentLine)
+          ? visualBoundariesForLine(currentLine)
+          : []
+        // Command+Left/Right means visual line start/end on macOS. Let the
+        // folded projection define that line so the command cannot stop at a
+        // raw newline hidden behind the placeholder.
+        if (
+          event.metaKey
+          && !event.altKey
+          && !event.ctrlKey
+          && !(!event.shiftKey && input.selectionStart !== input.selectionEnd)
+          && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+          && currentBoundaries.length > 0
+        ) {
+          const ordered = orderedFoldVisualBoundaries(currentBoundaries)
+          const offset = event.key === 'ArrowLeft'
+            ? ordered[0]?.offset
+            : ordered.at(-1)?.offset
+          if (offset !== undefined) {
+            event.preventDefault()
+            applyKeyboardSelection(event.shiftKey ? selection.anchor : offset, offset)
+            return
+          }
+        }
+        scheduleModifierNavigationNormalization(
+          modifierDirection,
+          selection.focus,
+          event.shiftKey
+        )
+        return
+      }
       if (!event.shiftKey && input.selectionStart !== input.selectionEnd) {
         const focus = event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'Home'
           ? input.selectionStart
@@ -1472,6 +1682,9 @@ export default definePlugin({
       event.preventDefault()
       applyKeyboardSelection(event.shiftKey ? selection.anchor : offset, offset)
     }
+    input.addEventListener('keydown', scheduleKeyboardFocusVisibility, true)
+    input.addEventListener('keydown', onSelectAllKeyDown, true)
+    input.addEventListener('keyup', scheduleKeyboardFocusVisibility, true)
     target.addEventListener('pointerdown', onPointerDown, true)
     target.addEventListener('pointermove', onPointerMove, true)
     target.addEventListener('pointerup', onPointerUp, true)
@@ -1565,6 +1778,7 @@ export default definePlugin({
     return () => {
       observer.disconnect()
       if (renderFrame !== undefined) cancelAnimationFrame(renderFrame)
+      if (postRenderScrollFrame !== undefined) cancelAnimationFrame(postRenderScrollFrame)
       target.removeEventListener('click', onClick)
       input.removeEventListener('scroll', onInputScroll)
       container.removeEventListener('wheel', onWheel)
@@ -1589,7 +1803,19 @@ export default definePlugin({
       target.removeEventListener('mousemove', onMouseMove, true)
       target.removeEventListener('mouseup', onMouseUp, true)
       target.removeEventListener('click', onClickMapped, true)
+      input.removeEventListener('keydown', scheduleKeyboardFocusVisibility, true)
+      input.removeEventListener('keydown', onSelectAllKeyDown, true)
+      input.removeEventListener('keyup', scheduleKeyboardFocusVisibility, true)
       input.removeEventListener('keydown', onKeyDown)
+      if (keyboardVisibilityFrame !== undefined) {
+        cancelAnimationFrame(keyboardVisibilityFrame)
+      }
+      if (keyboardNormalizationFrame !== undefined) {
+        cancelAnimationFrame(keyboardNormalizationFrame)
+      }
+      pendingModifierNavigation = undefined
+      if (keyboardRevealTimer !== undefined) clearTimeout(keyboardRevealTimer)
+      cursorElement.classList.remove('shikitor-cursor--keyboard-reveal')
       document.removeEventListener('selectionchange', onSelectionChange)
       input.removeEventListener('select', onSelectionChange)
       input.removeEventListener('focus', onSelectionChange)
@@ -1610,7 +1836,7 @@ export default definePlugin({
         '.shikitor-fold-placeholder, .shikitor-fold-suffix'
       )
         .forEach(element => element.remove())
-      gutters.querySelectorAll<HTMLElement>('.shikitor-fold-toggle')
+      gutters.querySelectorAll<HTMLElement>('.shikitor-fold-toggle-slot')
         .forEach(element => element.remove())
       target.querySelectorAll<HTMLElement>('.shikitor-output-line, .shikitor-gutter-line')
         .forEach(element => {

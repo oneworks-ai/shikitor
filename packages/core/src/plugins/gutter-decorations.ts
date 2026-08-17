@@ -1,6 +1,6 @@
-import './gutter-decorations.scss'
-
 import { definePlugin } from '@shikitor/core'
+
+import { insertGutterDecorationSlot } from './_internal/gutter-decoration-slot'
 
 export interface GutterDecoration {
   id: string
@@ -49,12 +49,8 @@ export default definePlugin({
         if (!number) continue
         for (const position of ['left', 'right'] as const) {
           if (!positions.has(position)) continue
-          const slot = document.createElement('span')
-          slot.className = `shikitor-gutter-decoration-slot shikitor-gutter-decoration-slot--${position}`
+          const slot = insertGutterDecorationSlot(number, position)
           slot.dataset.shikitorGutterDecorationSlot = position
-          slot.dataset.position = position
-          if (position === 'left') number.before(slot)
-          else number.after(slot)
         }
       }
 
