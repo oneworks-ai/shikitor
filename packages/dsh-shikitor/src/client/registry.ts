@@ -432,6 +432,7 @@ export class ShikitorRuntime extends Service implements ShikitorService {
   private readonly connection: ConnectionHandle
   private configuredFileIconDisposers: Array<() => void> = []
   private readonly documents = new Map<SessionId, ObservableValue<ShikitorEditorDocument>>()
+  private readonly documentDrafts = new Map<SessionId, Map<string, ShikitorEditorDocument>>()
   private readonly icons = new FileIconRegistry()
   private readonly imageSources = new Map<string, CachedImageSource>()
   private readonly editorContextRevisions = new Map<string, number>()
@@ -549,6 +550,12 @@ export class ShikitorRuntime extends Service implements ShikitorService {
     try {
       await this.saveBeforeDocumentSwitch(sessionId)
     } catch {
+      return
+    }
+    const draft = this.documentDrafts.get(sessionId)?.get(path)
+    if (draft !== undefined) {
+      source.set(draft)
+      if (this.preferences.getSnapshot().editor.autoSave) this.scheduleDocumentSave(sessionId)
       return
     }
     const previous = source.getSnapshot()
@@ -669,8 +676,18 @@ export class ShikitorRuntime extends Service implements ShikitorService {
 
   private async saveBeforeDocumentSwitch(sessionId: SessionId): Promise<void> {
     const document = this.documentSource(sessionId).getSnapshot()
-    if (!document.dirty || !this.preferences.getSnapshot().editor.autoSave) return
-    await this.saveDocument(sessionId)
+    if (!document.dirty) return
+    if (this.preferences.getSnapshot().editor.autoSave) {
+      await this.saveDocument(sessionId)
+      return
+    }
+    if (document.path === undefined) throw new Error('Cannot retain an unsaved document without a path')
+    let drafts = this.documentDrafts.get(sessionId)
+    if (drafts === undefined) {
+      drafts = new Map()
+      this.documentDrafts.set(sessionId, drafts)
+    }
+    drafts.set(document.path, document)
   }
 
   private async persistDocument(sessionId: SessionId): Promise<void> {
@@ -690,6 +707,7 @@ export class ShikitorRuntime extends Service implements ShikitorService {
       if (!isFileReadResponse(result.value)) throw new TypeError('file writer returned an invalid payload')
       const current = source.getSnapshot()
       if (current === document && result.value.path === document.path) {
+        this.documentDrafts.get(sessionId)?.delete(document.path)
         source.set({ ...current, dirty: false, error: undefined, status: 'ready' })
       }
     } catch (error) {
