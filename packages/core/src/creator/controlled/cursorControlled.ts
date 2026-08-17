@@ -9,6 +9,7 @@ import type { RawTextHelper } from '../../utils/getRawTextHelper'
 export function cursorControlled(
   getShikitor: () => Shikitor | undefined,
   target: HTMLElement,
+  input: HTMLTextAreaElement,
   rthRef: RefObject<RawTextHelper>,
   ref: RefObject<{ cursor?: Cursor }>,
   onCursorChange: (cursor: ResolvedCursor) => void
@@ -26,10 +27,19 @@ export function cursorControlled(
   })
 
   let cursorBlinkInterval: NodeJS.Timeout | null = null
+  const stopCursorBlink = () => {
+    if (cursorBlinkInterval) clearInterval(cursorBlinkInterval)
+    cursorBlinkInterval = null
+    target.classList.remove('shikitor--focused')
+    defaultCursor.classList.remove(
+      'shikitor-cursor--visible',
+      'shikitor-cursor--keyboard-reveal'
+    )
+  }
   const startCursorBlink = () => {
-    if (cursorBlinkInterval) {
-      clearInterval(cursorBlinkInterval)
-    }
+    stopCursorBlink()
+    if (document.activeElement !== input) return
+    target.classList.add('shikitor--focused')
     const shikitor = getShikitor()
     const cursor = cursorRef.current
     let [top, left] = ['0px', '0px']
@@ -45,19 +55,23 @@ export function cursorControlled(
       defaultCursor.classList.toggle('shikitor-cursor--visible')
     }, 700) // 0.5s visible, 0.2s hidden
   }
-  const dispose = subscribe(cursorRef, () => {
+  const disposeCursor = subscribe(cursorRef, () => {
     const cursor = cursorRef.current
     if (cursor === undefined) return
     onCursorChange(cursor)
     startCursorBlink()
   })
+  input.addEventListener('focus', startCursorBlink)
+  input.addEventListener('blur', stopCursorBlink)
 
   startCursorBlink()
   return {
     cursorRef,
     dispose() {
-      dispose()
-      cursorBlinkInterval && clearInterval(cursorBlinkInterval)
+      disposeCursor()
+      input.removeEventListener('focus', startCursorBlink)
+      input.removeEventListener('blur', stopCursorBlink)
+      stopCursorBlink()
     }
   }
 }

@@ -3,11 +3,13 @@ import type { BundledLanguage, BundledTheme } from 'shiki'
 
 import type {
   InlineReplacement,
+  ShikitorHighlight,
   ShikitorOptions,
   ShikitorRenderMode
 } from '../../editor'
 import type { DocumentLines } from './documentLines'
 import type { TokenSnapshot } from './tokenSnapshot'
+import { hasRangeHighlights } from './highlightNormalizer'
 import { canUseLessDom } from './lessDomRenderer'
 
 export interface RenderInput {
@@ -17,6 +19,7 @@ export interface RenderInput {
   language: BundledLanguage
   decorations?: DecorationItem[]
   inlineReplacements?: InlineReplacement[]
+  highlights?: ShikitorHighlight[]
   plugins?: ShikitorOptions['plugins']
   renderMode?: ShikitorRenderMode
 }
@@ -28,10 +31,12 @@ export type RenderOutput =
 
 export function canVirtualizeAllDom({
   decorations,
+  highlights,
   inlineReplacements,
   plugins
-}: Pick<RenderInput, 'decorations' | 'inlineReplacements' | 'plugins'>) {
+}: Pick<RenderInput, 'decorations' | 'highlights' | 'inlineReplacements' | 'plugins'>) {
   return !decorations?.length
+    && !hasRangeHighlights(highlights)
     && !inlineReplacements?.length
     && !plugins?.length
 }
@@ -55,6 +60,7 @@ export function resolveRenderMode(
   input: HTMLTextAreaElement,
   {
     decorations,
+    highlights,
     inlineReplacements,
     plugins,
     renderMode = 'auto'
@@ -62,6 +68,7 @@ export function resolveRenderMode(
 ): Exclude<ShikitorRenderMode, 'auto'> {
   const needsProjection = !canVirtualizeAllDom({
     decorations,
+    highlights,
     inlineReplacements,
     plugins
   })

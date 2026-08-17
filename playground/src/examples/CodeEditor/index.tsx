@@ -36,6 +36,7 @@ import bracketMatcher from '../../../../packages/core/src/plugins/bracket-matche
 import symmetryOperator from '../../../../packages/core/src/plugins/symmetry-operator'
 import demoCompletions from './plugins/demo-completions'
 import ghostText from './plugins/ghost-text'
+import HighlightsCase from './components/HighlightsCase'
 import InlineReplacementsCase from './components/InlineReplacementsCase'
 
 const noPlugins: InputShikitorPlugin[] = []
@@ -145,6 +146,7 @@ export default function CodeEditor() {
     'code-editor.gutter.visible': string
     'code-editor.gutter.position': GutterDecorationPosition
     'code-editor.states.line-numbers': string
+    'code-editor.states.auto-focus': string
     'code-editor.states.read-only': string
     'code-editor.states.empty': string
     'code-editor.states.placeholder': string
@@ -199,6 +201,7 @@ export default function CodeEditor() {
     : 'left'
 
   const behaviorLineNumbers = query['code-editor.states.line-numbers'] !== 'false'
+  const behaviorAutoFocus = query['code-editor.states.auto-focus'] === 'true'
   const behaviorReadOnly = query['code-editor.states.read-only'] === 'true'
   const behaviorEmpty = query['code-editor.states.empty'] === 'true'
   const behaviorPlaceholder = query['code-editor.states.placeholder']
@@ -236,9 +239,6 @@ export default function CodeEditor() {
   const gutterEditorMountCountRef = useRef(0)
   const gutterDecorationRenderCountRef = useRef(0)
   const gutterProbeRef = useRef<HTMLDivElement>(null)
-  const completionInitialFocusRef = useRef(false)
-  const editingInitialFocusRef = useRef(false)
-  const lineWidgetInitialFocusRef = useRef(false)
 
   const updateGutterProbe = useCallback(() => {
     const probe = gutterProbeRef.current
@@ -259,24 +259,6 @@ export default function CodeEditor() {
     updateGutterProbe()
   }, [updateGutterProbe])
 
-  const handleCompletionMounted = useCallback((editor: Shikitor) => {
-    if (completionInitialFocusRef.current) return
-    completionInitialFocusRef.current = true
-    editor.focus({ line: 3, character: 7 }, { preventScroll: true })
-  }, [])
-
-  const handleEditingMounted = useCallback((editor: Shikitor) => {
-    if (editingInitialFocusRef.current) return
-    editingInitialFocusRef.current = true
-    editor.focus({ line: 1, character: 0 }, { preventScroll: true })
-  }, [])
-
-  const handleLineWidgetMounted = useCallback((editor: Shikitor) => {
-    if (lineWidgetInitialFocusRef.current) return
-    lineWidgetInitialFocusRef.current = true
-    editor.focus({ line: 2, character: 16 }, { preventScroll: true })
-  }, [])
-
   useEffect(updateGutterProbe)
 
   const themeOptions = useMemo(() => ({
@@ -295,7 +277,8 @@ export default function CodeEditor() {
   const completionOptions = useMemo(() => ({
     language: 'typescript' as const,
     theme,
-    hideSelfCursorUsername: true
+    hideSelfCursorUsername: true,
+    cursor: { line: 3, character: 7 }
   }), [theme])
   const completionPlugins = useMemo(() => {
     const plugins: InputShikitorPlugin[] = []
@@ -318,7 +301,8 @@ export default function CodeEditor() {
   const editingOptions = useMemo(() => ({
     language: 'typescript' as const,
     theme,
-    hideSelfCursorUsername: true
+    hideSelfCursorUsername: true,
+    cursor: { line: 1, character: 0 }
   }), [theme])
   const editingPlugins = useMemo(() => {
     const plugins: InputShikitorPlugin[] = []
@@ -338,10 +322,18 @@ export default function CodeEditor() {
     language: 'typescript' as const,
     theme,
     lineNumbers: behaviorLineNumbers ? 'on' as const : 'off' as const,
+    autoFocus: behaviorAutoFocus,
     readOnly: behaviorReadOnly,
     placeholder: behaviorPlaceholder
-  }), [behaviorLineNumbers, behaviorPlaceholder, behaviorReadOnly, theme])
+  }), [behaviorAutoFocus, behaviorLineNumbers, behaviorPlaceholder, behaviorReadOnly, theme])
   const lineWidgetOptions = useMemo(() => ({
+    language: 'typescript' as const,
+    theme,
+    hideSelfCursorUsername: true,
+    cursor: { line: 2, character: 16 },
+    readOnly: true
+  }), [theme])
+  const gutterOptions = useMemo(() => ({
     language: 'typescript' as const,
     theme,
     hideSelfCursorUsername: true,
@@ -572,6 +564,13 @@ export default function CodeEditor() {
             onChange={value => queries.set('code-editor.states.line-numbers', String(value))}
           />
         </SwitchField>
+        <SwitchField label={t('code.states.autoFocus')} description={t('code.states.autoFocusHelp')}>
+          <Switch
+            size='small'
+            value={behaviorAutoFocus}
+            onChange={value => queries.set('code-editor.states.auto-focus', String(value))}
+          />
+        </SwitchField>
         <SwitchField label={t('code.states.readOnly')} description={t('code.states.readOnlyHelp')}>
           <Switch
             size='small'
@@ -728,7 +727,6 @@ export default function CodeEditor() {
               value={completionCode}
               onChange={setCompletionCode}
               plugins={completionPlugins}
-              onMounted={handleCompletionMounted}
               onColorChange={setCompletionColors}
               options={completionOptions}
             />
@@ -785,7 +783,6 @@ export default function CodeEditor() {
               plugins={editingPlugins}
               onColorChange={setEditingColors}
               options={editingOptions}
-              onMounted={handleEditingMounted}
             />
           </EditorFrame>
         )}
@@ -840,7 +837,6 @@ export default function CodeEditor() {
               plugins={lineWidgetPlugins}
               onColorChange={setLineWidgetColors}
               options={lineWidgetOptions}
-              onMounted={handleLineWidgetMounted}
             />
           </EditorFrame>
         )}
@@ -893,7 +889,7 @@ export default function CodeEditor() {
               create={shikitorCreate}
               value={gutterCode}
               onChange={setGutterCode}
-              options={lineWidgetOptions}
+              options={gutterOptions}
               plugins={gutterDecorationPlugins}
               onMounted={handleGutterMounted}
               onColorChange={setGutterColors}
@@ -933,6 +929,7 @@ export default function CodeEditor() {
         </div>
       </ComponentCase>
 
+      <HighlightsCase theme={theme} />
       <InlineReplacementsCase theme={theme} />
 
     </div>

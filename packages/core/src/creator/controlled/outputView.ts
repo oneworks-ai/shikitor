@@ -2,6 +2,7 @@ import type { RefObject } from '../../base'
 import { cssvar } from '../../base'
 import type { ResolvedCursor } from '../../editor'
 import { HIGHLIGHTED, OUTPUT_HIGHLIGHTED } from '../classes'
+import { createLineHighlightView } from './lineHighlightView'
 import { resolveVirtualLineRange } from './virtualViewport'
 
 export function resolveContentOffsetTop(input: HTMLTextAreaElement) {
@@ -23,6 +24,7 @@ export function createOutputView({
 }) {
   let gutterFrame = 0
   let gutterLineCount = 0
+  const lineHighlightView = createLineHighlightView({ target, input, lines, output })
   const gutterObserver = typeof ResizeObserver === 'undefined'
     ? undefined
     : new ResizeObserver(() => {
@@ -71,6 +73,7 @@ export function createOutputView({
   }
 
   function renderGutter(lineCount: number, useVirtualViewport: boolean) {
+    lineHighlightView.setLineCount(lineCount)
     syncContentOffsetTop()
     if (!useVirtualViewport) {
       gutterLineCount = 0
@@ -128,7 +131,13 @@ export function createOutputView({
     gutterObserver?.disconnect()
     input.removeEventListener('scroll', scheduleGutterRender)
     target.style.removeProperty(cssvar('content-offset-top'))
+    lineHighlightView.dispose()
   }
 
-  return { dispose, renderGutter, syncCurrentLineHighlight }
+  return {
+    dispose,
+    renderGutter,
+    syncCurrentLineHighlight,
+    updateLineHighlights: lineHighlightView.update
+  }
 }

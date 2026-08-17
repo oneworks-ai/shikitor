@@ -55,7 +55,7 @@ export default function InlineReplacementsCase({ theme }: { theme: BundledTheme 
   return (
     <ComponentCase
       id='code-editor-inline-replacements'
-      index='08'
+      index='09'
       title={t('code.inline.title')}
       description={t('code.inline.description')}
       tags={['Inline', 'Interaction']}

@@ -11,6 +11,7 @@ import {
 } from './decorationNormalizer'
 import { createDocumentLines } from './documentLines'
 import { createLatestRenderController } from './latestRenderController'
+import { rangeHighlightDecorations } from './highlightNormalizer'
 import { createLessDomRenderer } from './lessDomRenderer'
 import {
   applyOutputPresentation, createOutputPresentation,
@@ -50,7 +51,8 @@ export function outputRenderControlled(
   const {
     dispose: disposeOutputView,
     renderGutter,
-    syncCurrentLineHighlight
+    syncCurrentLineHighlight,
+    updateLineHighlights
   } = createOutputView({ target, input, lines, output, cursorRef })
   const lessDomRenderer = createLessDomRenderer(target, input, output)
   const allDomRenderer = createAllDomRenderer(
@@ -59,7 +61,9 @@ export function outputRenderControlled(
   let committedRenderVersion = 0
   const outputPresentation = createOutputPresentation(optionsRef)
   scopeWatch(get => {
-    applyOutputPresentation(target, get(outputPresentation))
+    const presentation = get(outputPresentation)
+    applyOutputPresentation(target, presentation)
+    updateLineHighlights(presentation.highlights)
   })
   const outputRenderDeps = createOutputRenderDependencies(optionsRef)
   const renderer = createLatestRenderController<RenderInput, RenderOutput>({
@@ -69,6 +73,7 @@ export function outputRenderControlled(
         document,
         theme,
         decorations,
+        highlights,
         inlineReplacements,
         plugins
       } = renderInput
@@ -86,6 +91,7 @@ export function outputRenderControlled(
       lessDomRenderer.clear()
       const useVirtualViewport = canVirtualizeAllDom({
         decorations,
+        highlights,
         inlineReplacements,
         plugins
       })
@@ -100,6 +106,7 @@ export function outputRenderControlled(
         theme,
         language,
         decorations,
+        highlights,
         inlineReplacements
       } = renderInput
       const viewportLines = resolveVirtualLineRange(
@@ -137,6 +144,10 @@ export function outputRenderControlled(
       const highlighted = await highlighter.codeToHtml(value, theme, language, {
         decorations: [
           ...(normalizeDecorations(value, decorations) ?? []),
+          ...(normalizeDecorations(
+            value,
+            rangeHighlightDecorations(highlights)
+          ) ?? []),
           ...(normalizeInlineReplacementDecorations(value, inlineReplacements) ?? [])
         ],
         lang: language,
@@ -187,6 +198,7 @@ export function outputRenderControlled(
       theme = 'github-light',
       language = 'javascript',
       decorations,
+      highlights,
       inlineReplacements,
       plugins,
       renderMode
@@ -198,6 +210,7 @@ export function outputRenderControlled(
       theme,
       language,
       decorations,
+      highlights,
       inlineReplacements,
       plugins,
       renderMode

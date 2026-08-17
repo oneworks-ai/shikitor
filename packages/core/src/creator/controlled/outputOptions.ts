@@ -9,6 +9,7 @@ type OutputPresentation = Pick<
   | 'currentLineHighlightColor'
   | 'hideSelfCursorUsername'
   | 'highlightCurrentLine'
+  | 'highlights'
   | 'lineNumbers'
   | 'readOnly'
 >
@@ -17,6 +18,7 @@ type OutputRenderDependencies = Pick<
   ShikitorOptions,
   | 'decorations'
   | 'inlineReplacements'
+  | 'highlights'
   | 'language'
   | 'plugins'
   | 'renderMode'
@@ -30,6 +32,7 @@ export function createOutputPresentation(
     readOnly: get => get(optionsRef).current.readOnly,
     lineNumbers: get => get(optionsRef).current.lineNumbers,
     highlightCurrentLine: get => get(optionsRef).current.highlightCurrentLine,
+    highlights: get => get(optionsRef).current.highlights,
     currentLineHighlightColor: get => (
       get(optionsRef).current.currentLineHighlightColor
     ),
@@ -46,6 +49,7 @@ export function createOutputRenderDependencies(
     theme: get => get(optionsRef).current.theme,
     language: get => get(optionsRef).current.language,
     decorations: get => get(optionsRef).current.decorations,
+    highlights: get => get(optionsRef).current.highlights,
     inlineReplacements: get => get(optionsRef).current.inlineReplacements,
     plugins: get => get(optionsRef).current.plugins,
     renderMode: get => get(optionsRef).current.renderMode

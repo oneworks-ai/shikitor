@@ -40,6 +40,12 @@ describe('output rendering', () => {
       decorations: [{ start: 0, end: 1, properties: {} }]
     })).toBe(false)
     expect(canVirtualizeAllDom({
+      highlights: [{ color: 'gold', lines: [2, { start: 4, end: 6 }] }]
+    })).toBe(true)
+    expect(canVirtualizeAllDom({
+      highlights: [{ color: 'gold', ranges: [{ start: 0, end: 1 }] }]
+    })).toBe(false)
+    expect(canVirtualizeAllDom({
       inlineReplacements: [{ start: 0, end: 1 }]
     })).toBe(false)
     expect(canVirtualizeAllDom({ plugins: [{} as never] })).toBe(false)

@@ -80,6 +80,44 @@ the native textarea; the latest asynchronous token snapshot replaces it when
 ready. Stale token jobs never commit, so a slow highlight pass cannot overwrite
 newer input.
 
+## Focus lifecycle
+
+The local caret is visible and blinks only while the editor textarea owns
+focus. Set `autoFocus: true` to focus after creation; changing `autoFocus`
+from `false` to `true` also focuses an existing blurred editor. The default is
+`false`, so mounting an editor does not steal focus from the host page.
+
+## Line and range highlights
+
+Use `highlights` to paint isolated source lines, inclusive line ranges, and
+exact text ranges without changing the textarea value. Full-line targets stay
+compatible with the compact renderer; exact text ranges use the projected DOM
+renderer so their background follows the highlighted glyphs.
+
+```ts
+await create(element, {
+  value: source,
+  highlights: [
+    {
+      color: 'rgba(245, 158, 11, .2)',
+      lines: [2, { start: 5, end: 7 }, 10]
+    },
+    {
+      color: 'rgba(124, 108, 242, .32)',
+      ranges: [
+        { start: 18, end: 24 },
+        { start: { line: 3, character: 2 }, end: { line: 3, character: 8 } }
+      ]
+    }
+  ]
+})
+```
+
+Line numbers are one-based and line ranges are inclusive. Text-range positions
+follow Shiki decoration coordinates, so `{ line, character }` is zero-based.
+Later full-line rules win when line targets overlap. Both target types may be
+discontinuous, and changing `highlights` updates the existing editor instance.
+
 ### Syntax worker
 
 Hosts can move grammar initialization and tokenization off the main thread by

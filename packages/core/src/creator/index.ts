@@ -106,6 +106,7 @@ export async function create(
   } = cursorControlled(
     () => shikitor,
     target,
+    input,
     rawTextHelperRef,
     optionsRef,
     cursor => {
@@ -210,7 +211,6 @@ export async function create(
     _getCursorAbsolutePosition(cursor, lineOffset = 0): { x: number; y: number } {
       const { rawTextHelper: { line } } = this
       const span = document.createElement('span')
-      const inputStyle = getComputedStyle(input)
       span.style.cssText = `
         position: absolute;
         top: 0;
@@ -298,6 +298,8 @@ export async function create(
     async updateOptions(newOptions) {
       const previousOptions = this.options
       const updatedOptions = callUpdateDispatcher(newOptions, previousOptions) ?? {}
+      const shouldAutoFocus = updatedOptions.autoFocus === true
+        && previousOptions.autoFocus !== true
       const pluginsProvided = Object.prototype.hasOwnProperty.call(updatedOptions, 'plugins')
       const {
         cursor,
@@ -320,6 +322,9 @@ export async function create(
           previousOptions.plugins,
           pluginsProvided
         )
+      }
+      if (shouldAutoFocus && document.activeElement !== input) {
+        this.focus(newCursor)
       }
     },
     get language() {
@@ -452,5 +457,8 @@ export async function create(
     context.emit('shikitor/blur')
     onBlurred?.()
   })
+  if (inputOptions.autoFocus && document.activeElement !== input) {
+    shikitor.focus(inputOptions.cursor)
+  }
   return shikitor
 }
