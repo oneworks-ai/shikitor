@@ -14,6 +14,7 @@
 - Skill 发现通过 DSH `ctx.skills` Provider 注册，使 `$`、`/`、模型目录和 Skill 正文加载共享条目和调用策略。
 - 默认文件名映射、Glyph、字体和颜色来自固定版本的 Atom File Icons 浏览器 Adapter。工作区图片读取必须保留路径穿越、文件类型和 1 MiB 大小检查。
 - Shikitor 设置页复用 DSH 的标签页和 Popup Menu 交互模式；不要为插件设置另造原生 `<select>` 或独立视觉体系。
+- DSH 的浏览器插件加载器只接受注册到 `window.__ModuleLoader__` 的单文件入口。`tsdown.config.ts` 必须把 Shiki 的语言和主题表收敛到本包的最小 facade，并内联动态 import；`pnpm build` 会通过 `scripts/verify-client-bundle.mjs` 拒绝任何相对 `require()` 或额外 JavaScript 分片。
 
 ## 市场截图
 

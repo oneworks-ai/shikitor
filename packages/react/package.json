@@ -1,6 +1,6 @@
 {
   "name": "@shikitor/react",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shikitor for react",
   "license": "MIT",
   "files": ["dist", "index.css", "LICENSE"],

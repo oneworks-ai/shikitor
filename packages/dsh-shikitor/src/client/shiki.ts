@@ -21,7 +21,7 @@ import vitesseDark from 'shiki/dist/themes/vitesse-dark.mjs'
 import vitesseLight from 'shiki/dist/themes/vitesse-light.mjs'
 import getWasmInlined from 'shiki/wasm'
 
-const languages = {
+export const bundledLanguages = {
   bash,
   css,
   html,
@@ -37,7 +37,7 @@ const languages = {
   vue,
   yaml,
 }
-const themes = {
+export const bundledThemes = {
   'github-dark': githubDark,
   'github-light': githubLight,
   'min-dark': minDark,
@@ -47,7 +47,11 @@ const themes = {
 }
 
 /** Minimal Shiki facade used by the DSH bundle; it deliberately avoids the full language registry. */
-export const getHighlighter = createdBundledHighlighter(languages, themes, getWasmInlined)
+export const getHighlighter = createdBundledHighlighter(
+  bundledLanguages,
+  bundledThemes,
+  getWasmInlined,
+)
 
 /** Shikitor only needs this list to decide whether its plain-text fallback is dark. */
 export const bundledThemesInfo = [
