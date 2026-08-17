@@ -1,6 +1,6 @@
 {
   "name": "dsh-shikitor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shikitor editor and sender surfaces for DeepSeek Harness",
   "license": "MIT",
   "homepage": "https://github.com/oneworks-ai/shikitor/tree/master/packages/dsh-shikitor",
@@ -60,7 +60,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && node ./scripts/verify-client-bundle.mjs",
     "build:dev": "tsdown --env.DSH_SHIKITOR_DEV true",
     "prepack": "pnpm run build",
     "screenshots": "node ./scripts/capture-screenshots.mjs",

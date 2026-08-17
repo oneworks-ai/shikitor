@@ -15,6 +15,9 @@ published.
 - Publish with pnpm only. Do not use bare `npm publish`, because npm does not
   apply pnpm's arbitrary `publishConfig` manifest overrides or workspace
   protocol conversion.
+- Run publish commands through workspace filters. Do not use
+  `pnpm --dir <package> publish`: pnpm 8 can leak the directory and command as
+  extra positional arguments to npm's publish subprocess.
 - From a clean release revision, run `pnpm release:packages`. The fixed order is
   core, React, then the DSH bundle so downstream package references already
   exist when each package becomes public.

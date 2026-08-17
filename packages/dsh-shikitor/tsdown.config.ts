@@ -105,7 +105,9 @@ export default ((inlineConfig) => [{
   plugins: [{
     name: 'dsh-shikitor-styles',
     resolveId(source: string, importer: string | undefined) {
-      if (source === 'shiki') return SHIKI_ENTRY
+      if (source === 'shiki' || source === 'shiki/langs' || source === 'shiki/themes') {
+        return SHIKI_ENTRY
+      }
       if (importer === undefined || (!source.endsWith('.css') && !source.endsWith('.scss'))) return null
       return styleModule(source, importer)
     },
@@ -134,6 +136,7 @@ export default ((inlineConfig) => [{
   }],
   outputOptions: {
     entryFileNames: 'client.js',
+    codeSplitting: false,
     banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PLUGIN_ID)}, factory: (require) => {`,
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
