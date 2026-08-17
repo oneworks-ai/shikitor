@@ -317,7 +317,7 @@ export default function App() {
             </button>
             <a
               className='playground-github'
-              href='https://github.com/NWYLZW/shikitor'
+              href='https://github.com/oneworks-ai/shikitor'
               target='_blank'
               rel='noreferrer'
               aria-label='Open Shikitor on GitHub'

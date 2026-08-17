@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
@@ -10,9 +10,17 @@ export default defineConfig({
         'json-summary'
       ]
     },
-    include: ['**/tests/**/*.spec.ts'],
+    include: [
+      'packages/**/tests/**/*.spec.ts',
+      'playground/tests/**/*.spec.ts'
+    ],
+    exclude: [...configDefaults.exclude, 'vendors/**'],
     typecheck: {
-      include: ['**/tests/**/*.spec.ts']
+      include: [
+        'packages/**/tests/**/*.spec.ts',
+        'playground/tests/**/*.spec.ts'
+      ],
+      exclude: [...configDefaults.exclude, 'vendors/**']
     }
   },
   esbuild: {

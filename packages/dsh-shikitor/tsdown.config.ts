@@ -78,7 +78,7 @@ function scopeAtomFileIconSelectors(css: string): string {
   })
 }
 
-export default ((inlineConfig) => ({
+export default ((inlineConfig) => [{
   name: `${PLUGIN_ID}/client`,
   entry: { client: 'src/client/index.ts' },
   outDir: 'dist',
@@ -97,8 +97,11 @@ export default ((inlineConfig) => ({
     'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
   },
-  external: [...EXTERNALS],
-  noExternal: (id: string) => EXTERNALS.includes(id as typeof EXTERNALS[number]) ? undefined : true,
+  deps: {
+    neverBundle: [...EXTERNALS],
+    alwaysBundle: (id: string) => EXTERNALS.includes(id as typeof EXTERNALS[number]) ? undefined : true,
+    onlyBundle: false,
+  },
   plugins: [{
     name: 'dsh-shikitor-styles',
     resolveId(source: string, importer: string | undefined) {
@@ -135,4 +138,20 @@ export default ((inlineConfig) => ({
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
   },
-})) satisfies UserConfigFn
+}, {
+  name: `${PLUGIN_ID}/types`,
+  entry: { client: 'src/client/index.ts' },
+  outDir: 'dist/types',
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2024',
+  dts: {
+    emitDtsOnly: true,
+    sourcemap: false,
+  },
+  sourcemap: false,
+  clean: false,
+  deps: {
+    neverBundle: true,
+  },
+}]) satisfies UserConfigFn

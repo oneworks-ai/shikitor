@@ -1,7 +1,7 @@
 #file: noinspection YAMLSchemaValidation
 contact_links:
   - name: 🙌 Contribution Guide
-    url: https://github.com/nwylzw/shikitor/blob/main/CONTRIBUTING.md
+    url: https://github.com/oneworks-ai/shikitor/blob/master/CONTRIBUTING.md
     about: Please read through before making contributions.
   - name: ⁉️ Why and How to make a reproduction?
     url: https://antfu.me/posts/why-reproductions-are-required

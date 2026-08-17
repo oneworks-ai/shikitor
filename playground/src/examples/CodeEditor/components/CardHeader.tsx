@@ -97,7 +97,7 @@ export function CardHeader() {
         </Tooltip>
         <Link
           hover='color'
-          href='https://github.com/nwylzw/shikitor'
+          href='https://github.com/oneworks-ai/shikitor'
           target='_blank'
         >
           <img src='https://github.githubassets.com/favicons/favicon.svg' alt='github' width='16' height='16' />

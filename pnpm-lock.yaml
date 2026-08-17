@@ -63,18 +63,9 @@ importers:
 
   packages/dsh-shikitor:
     dependencies:
-      '@deepseek-ai/dsh-agent':
-        specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/core/agent
-        version: link:../../vendors/deepseek-ai/deepseek-harness/packages/core/agent
-      '@deepseek-ai/dsh-atomic-write':
-        specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/util/atomic-write
-        version: link:../../vendors/deepseek-ai/deepseek-harness/packages/util/atomic-write
-      '@deepseek-ai/dsh-llm':
-        specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm
-        version: link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm
-      '@deepseek-ai/dsh-skill-filesystem':
-        specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem
-        version: link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem
+      react-dom:
+        specifier: ^18.2.0 || ^19.0.0
+        version: 18.2.0(react@18.2.0)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: link:../../vendors/deepseek-ai/deepseek-harness/vendor/cordis
@@ -82,6 +73,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/api/remotes
         version: link:../../vendors/deepseek-ai/deepseek-harness/packages/api/remotes
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/util/atomic-write
+        version: link:../../vendors/deepseek-ai/deepseek-harness/packages/util/atomic-write
       '@deepseek-ai/dsh-client-locale':
         specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/client/locale
         version: link:../../vendors/deepseek-ai/deepseek-harness/packages/client/locale
@@ -106,6 +100,12 @@ importers:
       '@deepseek-ai/dsh-client-ui-theme':
         specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-theme
         version: link:../../vendors/deepseek-ai/deepseek-harness/packages/client/ui-theme
+      '@deepseek-ai/dsh-llm':
+        specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm
+        version: link:../../vendors/deepseek-ai/deepseek-harness/packages/llm/llm
+      '@deepseek-ai/dsh-skill-filesystem':
+        specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem
+        version: link:../../vendors/deepseek-ai/deepseek-harness/packages/skill/skill-filesystem
       '@deepseek-ai/dsh-typert-protocol':
         specifier: link:../../vendors/deepseek-ai/deepseek-harness/packages/typert/protocol
         version: link:../../vendors/deepseek-ai/deepseek-harness/packages/typert/protocol
@@ -193,8 +193,11 @@ importers:
         version: registry.npmjs.org/@codemirror/merge@6.12.2
       '@pierre/diffs':
         specifier: 1.3.1
-        version: registry.npmjs.org/@pierre/diffs@1.3.1(react-dom@18.2.0)(react@18.2.0)
+        version: registry.npmjs.org/@pierre/diffs@1.3.1(@shikijs/themes@4.4.3)(react-dom@18.2.0)(react@18.2.0)
       '@shikijs/markdown-it':
+        specifier: ^4.4.3
+        version: 4.4.3
+      '@shikijs/themes':
         specifier: ^4.4.3
         version: 4.4.3
       '@shikijs/types':
@@ -1954,7 +1957,7 @@ packages:
     resolution: {integrity: sha512-ePic0yfAJGOF83D5wBHK/00EjK65oahBYxFk5epgq33WRv7X9UuxLEV8PtR0szC0z8dl7INIpIodB99JRFlR+A==, tarball: https://registry.npmjs.org/@shikijs/langs/-/langs-4.4.3.tgz}
     engines: {node: '>=20'}
     dependencies:
-      '@shikijs/types': registry.npmjs.org/@shikijs/types@4.4.3
+      '@shikijs/types': 4.4.3
 
   /@shikijs/markdown-it@4.4.3:
     resolution: {integrity: sha512-VcMgQA4Y7jEHAt4ehOAHPP9LchYXQ71jyLmw3fxDJYq9xdsD11iZT48SxNiPTDx99NFks10F4iY95Xwtj+e13Q==, tarball: https://registry.npmjs.org/@shikijs/markdown-it/-/markdown-it-4.4.3.tgz}
@@ -1987,7 +1990,7 @@ packages:
     resolution: {integrity: sha512-w8UHjeUnIR965KMWJHUPXOc2mNJUnK3vpVLYLvw5IYU2mnTTJ89E24OrJDBNiJDQ0qzb0tc4l7mrIXx5cFeIyw==, tarball: https://registry.npmjs.org/@shikijs/themes/-/themes-4.4.3.tgz}
     engines: {node: '>=20'}
     dependencies:
-      '@shikijs/types': registry.npmjs.org/@shikijs/types@4.4.3
+      '@shikijs/types': 4.4.3
 
   /@shikijs/transformers@4.4.3:
     resolution: {integrity: sha512-oJSARV6NaWd+rnNJbtnpAdj3Zg0ZVyzsnMgb3vi3HA+35y8lBWUCpOnWsmyiXZIikY+x1BDqrQUgmxfzWh7Jvw==, tarball: https://registry.npmjs.org/@shikijs/transformers/-/transformers-4.4.3.tgz}
@@ -2009,7 +2012,6 @@ packages:
     dependencies:
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.5
-    dev: false
 
   /@shikijs/vscode-textmate@10.0.2:
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==, tarball: https://registry.npmjs.org/@shikijs/vscode-textmate/-/vscode-textmate-10.0.2.tgz}
@@ -6106,7 +6108,6 @@ packages:
       loose-envify: 1.4.0
       react: 18.2.0
       scheduler: 0.23.0
-    dev: true
 
   /react-fast-compare@3.2.2:
     resolution: {integrity: sha512-nsO+KSNgo1SbJqJEYRE9ERzo7YtYbou/OqjSQKxV7jcKox7+usiUVZOAC+XnDOABXggQTno0Y1CpVnuWEc1boQ==}
@@ -6545,7 +6546,6 @@ packages:
     resolution: {integrity: sha512-CtuThmgHNg7zIZWAXi3AsyIzA3n4xx7aNyjwC2VJldO2LMVDhFK+63xGqq6CsJH4rTAt6/M+N4GhZiDYPx9eUw==}
     dependencies:
       loose-envify: 1.4.0
-    dev: true
 
   /semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
@@ -7865,7 +7865,7 @@ packages:
     version: 1.0.3
     dev: true
 
-  registry.npmjs.org/@pierre/diffs@1.3.1(react-dom@18.2.0)(react@18.2.0):
+  registry.npmjs.org/@pierre/diffs@1.3.1(@shikijs/themes@4.4.3)(react-dom@18.2.0)(react@18.2.0):
     resolution: {integrity: sha512-jSAm+Rybo7milxGg7ps7KjM3QZl2exhE9uYjQ4RSCdPNa9GS0mD4vBP99MoFhV95bLDKL1KSMdy0596BMLUacw==, registry: https://registry.npmjs.com/, tarball: https://registry.npmjs.org/@pierre/diffs/-/diffs-1.3.1.tgz}
     id: registry.npmjs.org/@pierre/diffs/1.3.1
     name: '@pierre/diffs'
@@ -7875,7 +7875,7 @@ packages:
       react-dom: ^18.3.1 || ^19.0.0
     dependencies:
       '@pierre/theme': registry.npmjs.org/@pierre/theme@2.0.0
-      '@pierre/theming': registry.npmjs.org/@pierre/theming@1.0.0(@pierre/theme@2.0.0)(react-dom@18.2.0)(react@18.2.0)(shiki@4.4.3)
+      '@pierre/theming': registry.npmjs.org/@pierre/theming@1.0.0(@pierre/theme@2.0.0)(@shikijs/themes@4.4.3)(react-dom@18.2.0)(react@18.2.0)(shiki@4.4.3)
       '@shikijs/transformers': 4.4.3
       diff: registry.npmjs.org/diff@9.0.0
       hast-util-to-html: registry.npmjs.org/hast-util-to-html@9.0.5
@@ -7894,7 +7894,7 @@ packages:
     engines: {vscode: ^1.0.0}
     dev: true
 
-  registry.npmjs.org/@pierre/theming@1.0.0(@pierre/theme@2.0.0)(react-dom@18.2.0)(react@18.2.0)(shiki@4.4.3):
+  registry.npmjs.org/@pierre/theming@1.0.0(@pierre/theme@2.0.0)(@shikijs/themes@4.4.3)(react-dom@18.2.0)(react@18.2.0)(shiki@4.4.3):
     resolution: {integrity: sha512-WsdrnhKfjeyXGDikZmN9pkpeZ5S/cl6EE72feiSc0tlynT1tMYqXqouhuv/foK+PY9OEnebOAVRQn3+rAstR8g==, registry: https://registry.npmjs.com/, tarball: https://registry.npmjs.org/@pierre/theming/-/theming-1.0.0.tgz}
     id: registry.npmjs.org/@pierre/theming/1.0.0
     name: '@pierre/theming'
@@ -7918,6 +7918,7 @@ packages:
         optional: true
     dependencies:
       '@pierre/theme': registry.npmjs.org/@pierre/theme@2.0.0
+      '@shikijs/themes': 4.4.3
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
       shiki: 4.4.3
@@ -7939,7 +7940,7 @@ packages:
     version: 4.4.3
     engines: {node: '>=20'}
     dependencies:
-      '@shikijs/types': registry.npmjs.org/@shikijs/types@4.4.3
+      '@shikijs/types': 4.4.3
       '@shikijs/vscode-textmate': registry.npmjs.org/@shikijs/vscode-textmate@10.0.2
 
   registry.npmjs.org/@shikijs/types@4.4.3:

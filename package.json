@@ -1,12 +1,18 @@
 {
   "private": true,
   "name": "shikitor-workspace",
-  "packageManager": "pnpm@8.0.0",
-  "version": "0.0.1",
+  "packageManager": "pnpm@8.15.9",
+  "version": "1.0.0",
   "license": "MIT",
   "description": "shikitor workspace",
-  "homepage": "https://nwylzw.github.io/shikitor",
-  "repository": "https://github.com/NWYLZW/shikitor",
+  "homepage": "https://oneworks-ai.github.io/shikitor",
+  "repository": "https://github.com/oneworks-ai/shikitor",
+  "scripts": {
+    "release:core": "pnpm --dir packages/core publish --access public --no-git-checks",
+    "release:react": "pnpm --dir packages/react publish --access public --no-git-checks",
+    "release:dsh": "pnpm --dir packages/dsh-shikitor publish --access public --no-git-checks",
+    "release:packages": "pnpm release:core && pnpm release:react && pnpm release:dsh"
+  },
   "devDependencies": {
     "@types/node": "^20.11.30",
     "jiek": "0.4.7",

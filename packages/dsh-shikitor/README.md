@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../playground/public/favicon.svg" width="256" alt="Shikitor Logo">
+  <img src="./assets/logo.svg" width="256" alt="Shikitor Logo">
 </p>
 
 <h1 align="center">dsh-shikitor</h1>
@@ -9,6 +9,15 @@
 A Shikitor editor and sender integration for the DeepSeek Harness web client.
 
 | en-US | [中文](./README.zh-CN.md) |
+
+## Installation
+
+Requires DeepSeek Harness 0.1.0-rc.5 or newer within the 0.1 release line
+(`<0.2.0`).
+
+```bash
+dsh plugin --profile web add dsh-shikitor
+```
 
 ## Preview
 
@@ -98,6 +107,7 @@ names from home entries.
 ## Register a surface plugin
 
 ```ts
+import type {} from 'dsh-shikitor/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import mySenderPlugin from './my-sender-plugin.ts'
 

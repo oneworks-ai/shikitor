@@ -1,5 +1,5 @@
 import { Service } from '@deepseek-ai/cordis'
-import type { InputShikitorPlugin } from '@shikitor/core'
+import type { InputShikitorPlugin } from '@shikitor/core/plugin'
 import type { BundledLanguage } from 'shiki'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
