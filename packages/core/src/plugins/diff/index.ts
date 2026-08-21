@@ -12,8 +12,8 @@ import { applyDiffTextEdit } from './editing'
 import { computeDiffModel } from './model'
 import { DiffSyntaxRenderer } from './syntax'
 import type {
-  ShikitorDiffController,
   ShikitorDiffCollapseUnchangedOptions,
+  ShikitorDiffController,
   ShikitorDiffHunk,
   ShikitorDiffHunkActionLabels,
   ShikitorDiffModel,
@@ -56,11 +56,10 @@ export default definePlugin({
     const target = shikitor.element
     const output = target.querySelector('.shikitor-output') as HTMLElement
     const gutters = target.querySelector('.shikitor-lines') as HTMLElement
-    const input = target.querySelector('.shikitor-input') as HTMLTextAreaElement
+    const input = shikitor.inputElement
     const viewRenderer = new DiffView(target, output, gutters, input)
     const syntax = new DiffSyntaxRenderer()
     const widgets: LineWidget[] = []
-    const oldSyntaxLines: HTMLElement[] = []
     let original = options.original
     let view: ShikitorDiffView = options.view ?? 'unified'
     let model = computeDiffModel(original, shikitor.value, options)
@@ -84,7 +83,7 @@ export default definePlugin({
       widgetGroup = createDiffWidgets({
         model,
         view,
-        oldLines: oldSyntaxLines,
+        oldLines: syntax.lines,
         actions: actionLabels(options.hunkActions),
         onAction
       })
@@ -92,7 +91,7 @@ export default definePlugin({
       viewRenderer.update({
         model,
         view,
-        oldLines: oldSyntaxLines,
+        oldLines: syntax.lines,
         actions: actionLabels(options.hunkActions),
         onAction
       })
@@ -118,11 +117,10 @@ export default definePlugin({
       syntaxKey = key
       const epoch = ++syntaxEpoch
       try {
-        const lines = await syntax.render(target, original, theme, language)
-        if (epoch !== syntaxEpoch) return
-        oldSyntaxLines.splice(0, oldSyntaxLines.length, ...lines)
+        const lines = await syntax.render(original, theme, language)
+        if (epoch !== syntaxEpoch || !lines) return
         viewRenderer.update({
-          model, view, oldLines: oldSyntaxLines,
+          model, view, oldLines: lines,
           actions: actionLabels(options.hunkActions), onAction
         })
         widgetGroup.refresh()

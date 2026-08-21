@@ -117,3 +117,28 @@ describe('collapsed diff context', () => {
     }])
   })
 })
+
+describe('diff view windows', () => {
+  it('hides original rows for folded current lines and keeps fold placeholder rows', async () => {
+    const { resolveVisualRows } = await import('../../src/plugins/diff/view')
+    const rows = computeDiffModel('a\nb\nc\nd', 'a\nb\nx\nd').rows
+    const hidden = new Set([2])
+    const visual = resolveVisualRows(rows, line => ({
+      hidden: hidden.has(line),
+      foldLine: line === 1
+    }))
+    expect(visual).toEqual([
+      { index: 0, fold: true },
+      { index: 2, fold: false },
+      { index: 3, fold: false }
+    ])
+  })
+
+  it('renders only the rows around the scrolled viewport', async () => {
+    const { resolveOriginalWindow } = await import('../../src/plugins/diff/view')
+    expect(resolveOriginalWindow(0, 220, 22, 1000, 2)).toEqual({ first: 0, last: 12 })
+    expect(resolveOriginalWindow(2200, 220, 22, 1000, 2)).toEqual({ first: 98, last: 112 })
+    expect(resolveOriginalWindow(21900, 220, 22, 1000, 2)).toEqual({ first: 993, last: 1000 })
+    expect(resolveOriginalWindow(0, 220, 0, 5, 2)).toEqual({ first: 0, last: 5 })
+  })
+})

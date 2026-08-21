@@ -44,12 +44,16 @@
 }
 
 .shikitor-diff-original__rows {
+  position: relative;
   width: 100%;
   min-width: max-content;
   will-change: transform;
 }
 
 .shikitor-diff-original__row {
+  position: absolute;
+  right: 0;
+  left: 0;
   display: grid;
   min-width: 100%;
   height: var(--line-height);
