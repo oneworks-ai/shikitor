@@ -8,9 +8,9 @@ import type {
   ShikitorRenderMode
 } from '../../editor'
 import type { DocumentLines } from './documentLines'
-import type { TokenSnapshot } from './tokenSnapshot'
 import { hasRangeHighlights } from './highlightNormalizer'
 import { canUseLessDom } from './lessDomRenderer'
+import type { TokenSnapshot } from './tokenSnapshot'
 
 export interface RenderInput {
   document: DocumentLines
@@ -39,6 +39,21 @@ export function canVirtualizeAllDom({
     && !hasRangeHighlights(highlights)
     && !inlineReplacements?.length
     && !plugins?.length
+}
+
+/**
+ * Shiki decorations, exact-range highlights and inline replacements are
+ * expressed through Shiki's HTML renderer, so they keep the serialized
+ * `codeToHtml` path. Plugins alone only require complete line elements.
+ */
+export function needsHtmlProjection({
+  decorations,
+  highlights,
+  inlineReplacements
+}: Pick<RenderInput, 'decorations' | 'highlights' | 'inlineReplacements'>) {
+  return Boolean(decorations?.length)
+    || hasRangeHighlights(highlights)
+    || Boolean(inlineReplacements?.length)
 }
 
 export function selectRenderMode({

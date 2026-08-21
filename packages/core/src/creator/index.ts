@@ -20,6 +20,25 @@ import { initDom, outputRenderControlled } from './controlled/outputRenderContro
 import { pluginsControlled, resolveUpdatedPluginInputs } from './controlled/pluginsControlled'
 import { valueControlled } from './controlled/valueControlled'
 
+/** Computed font properties are re-read at most this often (ms). */
+const MEASURE_FONT_REFRESH_MS = 1000
+
+const MEASURE_FONT_PROPERTIES = [
+  'fontFamily',
+  'fontSize',
+  'fontWeight',
+  'fontStyle',
+  'fontVariant',
+  'fontStretch',
+  'fontKerning',
+  'fontFeatureSettings',
+  'fontVariationSettings',
+  'lineHeight',
+  'textTransform',
+  'letterSpacing',
+  'wordSpacing'
+] as const
+
 export interface CreateOptions {
   abort?: AbortSignal
   /** Optional off-main-thread syntax service. The caller owns its lifecycle. */
@@ -73,6 +92,50 @@ export async function create(
   const dom = initDom(mount)
   const { target, input, output, placeholder, lines } = dom
   disposes.push(dom.dispose)
+  let measureElement: HTMLSpanElement | undefined
+  let measureFontKey = ''
+  let measureFrameValid = false
+  let measureFontCheckedAt = 0
+  let measureBoxOffset = { left: 0, top: 0 }
+  let measureLineBoxHeight = 0
+  let measureLineBoxKey = ''
+  const measureSpan = () => {
+    if (measureElement?.isConnected) return measureElement
+    const span = document.createElement('span')
+    span.className = 'shikitor-measure'
+    span.setAttribute('aria-hidden', 'true')
+    span.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      visibility: hidden;
+      pointer-events: none;
+    `
+    document.body.appendChild(span)
+    measureElement = span
+    measureFontKey = ''
+    measureLineBoxKey = ''
+    measureFrameValid = false
+    measureFontCheckedAt = 0
+    return span
+  }
+  // Height of one empty line box for the current font; cached per font.
+  const measureLineBox = (span: HTMLSpanElement) => {
+    if (measureLineBoxKey === measureFontKey) return measureLineBoxHeight
+    const text = span.textContent
+    span.textContent = ' '
+    measureLineBoxHeight = span.getBoundingClientRect().height
+    measureLineBoxKey = measureFontKey
+    span.textContent = text
+    return measureLineBoxHeight
+  }
+  disposes.push(() => {
+    measureElement?.remove()
+    measureElement = undefined
+  })
   const listenInput = <K extends keyof HTMLElementEventMap>(
     type: K,
     listener: (event: HTMLElementEventMap[K]) => void,
@@ -169,18 +232,22 @@ export async function create(
   })
   const syncSelection = (event?: Event) => {
     if (!shikitor) return
-    const { focusNode } = document.getSelection() ?? {}
-    const eventBelongsToInput = event?.target === input
-    if (!eventBelongsToInput &&
-      (
-        !(focusNode instanceof HTMLElement)
-        || focusNode.closest(`.${'shikitor'}`) !== target
-      )
-      && (
-        !(event?.target instanceof HTMLElement)
-        || event.target.closest(`.${'shikitor'}`) !== target
-      )
-    ) return
+    // Reading the document selection forces style and layout; a focused
+    // textarea already identifies the selection as ours.
+    const eventBelongsToInput = event?.target === input || document.activeElement === input
+    if (!eventBelongsToInput) {
+      const { focusNode } = document.getSelection() ?? {}
+      if (
+        (
+          !(focusNode instanceof HTMLElement)
+          || focusNode.closest(`.${'shikitor'}`) !== target
+        )
+        && (
+          !(event?.target instanceof HTMLElement)
+          || event.target.closest(`.${'shikitor'}`) !== target
+        )
+      ) return
+    }
 
     const { resolvePosition } = shikitor.rawTextHelper
     const selections = selectionsRef.current
@@ -219,57 +286,49 @@ export async function create(
   const shikitorInternal: ShikitorInternal = {
     _getCursorAbsolutePosition(cursor, lineOffset = 0): { x: number; y: number } {
       const { rawTextHelper: { line } } = this
-      const span = document.createElement('span')
-      span.style.cssText = `
-        position: absolute;
-        top: 0;
-        left: 0;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        visibility: hidden;
-      `
-      const style = getComputedStyle(input)
-      ;[
-        'fontFamily',
-        'fontSize',
-        'fontWeight',
-        'fontStyle',
-        'fontVariant',
-        'fontStretch',
-        'fontKerning',
-        'fontFeatureSettings',
-        'fontVariationSettings',
-        'lineHeight',
-        'textTransform',
-        'letterSpacing',
-        'wordSpacing'
-      ].forEach(
-        prop => {
-          // @ts-ignore
-          span.style[prop] = style[prop]
+      const span = measureSpan()
+      // Reading computed style after DOM writes forces a style recalculation;
+      // plugins resolve geometry many times per frame, so the font/box
+      // snapshot is refreshed at most once per animation frame.
+      if (!measureFrameValid) {
+        measureFrameValid = true
+        requestAnimationFrame(() => { measureFrameValid = false })
+        const now = performance.now()
+        if (!measureFontKey || now - measureFontCheckedAt > MEASURE_FONT_REFRESH_MS) {
+          measureFontCheckedAt = now
+          const style = getComputedStyle(input)
+          const fontKey = MEASURE_FONT_PROPERTIES
+            .map(prop => style[prop as keyof CSSStyleDeclaration] as string)
+            .join('\0')
+          if (fontKey !== measureFontKey) {
+            measureFontKey = fontKey
+            MEASURE_FONT_PROPERTIES.forEach(prop => {
+              // @ts-ignore
+              span.style[prop] = style[prop]
+            })
+          }
+          measureBoxOffset = dom.attached
+            ? { left: 0, top: 0 }
+            : {
+                left: parseInt(style.marginLeft) + parseInt(style.paddingLeft),
+                top: parseInt(style.marginTop) + parseInt(style.paddingTop)
+              }
         }
-      )
+      }
       const reallyLine = cursor.line + lineOffset - 1
       const computedLine = Math.max(reallyLine, 0)
       const text = line(cursor).substring(0, cursor.character)
       const inTheLineStart = cursor.character === 0
-      span.textContent = inTheLineStart
-        ? `${'\n'.repeat(computedLine)} `
-        : `${'\n'.repeat(computedLine)}${text}`
-      document.body.appendChild(span)
+      // Measure only the caret line. Preceding lines are plain line boxes of
+      // the same height, so their contribution is arithmetic instead of a
+      // layout over the whole document prefix.
+      span.textContent = inTheLineStart ? ' ' : text
       const rect = span.getBoundingClientRect()
-      document.body.removeChild(span)
-      const inputStyle = getComputedStyle(input)
-      const left = dom.attached
-        ? 0
-        : parseInt(inputStyle.marginLeft) + parseInt(inputStyle.paddingLeft)
-      const top = dom.attached
-        ? 0
-        : parseInt(inputStyle.marginTop) + parseInt(inputStyle.paddingTop)
+      const lineBox = inTheLineStart ? rect.height : measureLineBox(span)
+      const { left, top } = measureBoxOffset
       return {
         x: (inTheLineStart ? 0 : rect.right) + left,
-        y: (reallyLine === -1 ? 0 : rect.bottom) + top
+        y: (reallyLine === -1 ? 0 : rect.bottom + computedLine * lineBox) + top
       }
     }
   }

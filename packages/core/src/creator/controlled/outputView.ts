@@ -24,6 +24,7 @@ export function createOutputView({
 }) {
   let gutterFrame = 0
   let gutterLineCount = 0
+  let fullGutterCount = 0
   const lineHighlightView = createLineHighlightView({ target, input, lines, output })
   const gutterObserver = typeof ResizeObserver === 'undefined'
     ? undefined
@@ -55,6 +56,7 @@ export function createOutputView({
       viewport = document.createElement('div')
       viewport.className = 'shikitor-gutter-viewport'
       lines.replaceChildren(viewport)
+      delete lines.dataset.gutterKind
     }
     const fragment = document.createDocumentFragment()
     for (let index = range.start; index < range.end; index++) {
@@ -72,9 +74,58 @@ export function createOutputView({
     syncCurrentLineHighlight()
   }
 
+  function createGutterLine(index: number) {
+    const line = document.createElement('div')
+    line.className = 'shikitor-gutter-line'
+    line.dataset.line = String(index + 1)
+    const number = document.createElement('div')
+    number.className = 'shikitor-gutter-line-number'
+    number.textContent = String(index + 1)
+    line.append(number)
+    return line
+  }
+
+  /**
+   * Complete gutter for projected editors. Plugins decorate gutter lines and
+   * insert spacers between them, so the existing elements are kept and only
+   * the line-count delta is appended or removed.
+   */
+  function renderFullGutter(lineCount: number) {
+    if (lines.dataset.gutterKind !== 'full' || fullGutterCount === 0) {
+      const fragment = document.createDocumentFragment()
+      for (let index = 0; index < lineCount; index++) {
+        fragment.append(createGutterLine(index))
+      }
+      lines.replaceChildren(fragment)
+      lines.dataset.gutterKind = 'full'
+      fullGutterCount = lineCount
+      return
+    }
+    if (lineCount === fullGutterCount) return
+    if (lineCount > fullGutterCount) {
+      const fragment = document.createDocumentFragment()
+      for (let index = fullGutterCount; index < lineCount; index++) {
+        fragment.append(createGutterLine(index))
+      }
+      lines.append(fragment)
+    } else {
+      const gutterLines = lines.querySelectorAll<HTMLElement>('.shikitor-gutter-line')
+      for (let index = lineCount; index < gutterLines.length; index++) {
+        gutterLines[index].remove()
+      }
+    }
+    fullGutterCount = lineCount
+  }
+
+  let contentOffsetSynced = false
   function renderGutter(lineCount: number, useVirtualViewport: boolean) {
     lineHighlightView.setLineCount(lineCount)
-    syncContentOffsetTop()
+    // offsetTop forces layout; the resize observer keeps it current after
+    // the first render.
+    if (!contentOffsetSynced) {
+      contentOffsetSynced = true
+      syncContentOffsetTop()
+    }
     if (!useVirtualViewport) {
       gutterLineCount = 0
       lines.classList.remove('shikitor-lines--compact', 'shikitor-lines--virtual')
@@ -83,13 +134,10 @@ export function createOutputView({
         cssvar('line-digit-count'),
         `${lineCount.toString().length}ch`
       )
-      const prefix = 'shikitor-gutter-line'
-      lines.innerHTML = Array.from({ length: lineCount }).map((_, index) => (
-        `<div class="${prefix}" data-line="${index + 1}">`
-        + `<div class="${prefix}-number">${index + 1}</div></div>`
-      )).join('')
+      renderFullGutter(lineCount)
       return
     }
+    fullGutterCount = 0
     gutterLineCount = lineCount
     lines.classList.remove('shikitor-lines--compact')
     lines.classList.add('shikitor-lines--virtual')
