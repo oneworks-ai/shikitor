@@ -173,4 +173,44 @@ describe('single-line diff updates', () => {
     expect(updateDiffModelForLineEdit(previous, 'one!\ntwo!\nthree')).toBeUndefined()
     expect(updateDiffModelForLineEdit(previous, 'one\ntwo!\n\nthree')).toBeUndefined()
   })
+
+  it('defers to the full diff when an edit restores or re-matches baseline text', () => {
+    const original = 'one\ntwo\nthree\nfour'
+    // Restoring a modified row must dissolve the hunk instead of keeping a
+    // phantom change.
+    const modified = computeDiffModel(original, 'one\ntwo!\nthree\nfour')
+    const restored = 'one\ntwo\nthree\nfour'
+    expect(updateDiffModelForLineEdit(modified, restored)).toBeUndefined()
+    expect(computeDiffModel(original, restored).identical).toBe(true)
+    // An added line that becomes equal to a removed line in the same hunk is
+    // re-paired by the full diff.
+    const unbalanced = computeDiffModel('a\nb\nc', 'a\nx\ny\nc')
+    const repaired = 'a\nx\nb\nc'
+    const repairedUpdate = updateDiffModelForLineEdit(unbalanced, repaired)
+    expect(repairedUpdate ?? computeDiffModel('a\nb\nc', repaired)).toEqual(computeDiffModel('a\nb\nc', repaired))
+    // An added line equal to the neighbouring context line shifts the hunk.
+    const inserted = computeDiffModel('a\nb\nc', 'a\nX\nb\nc')
+    const shifted = 'a\nb\nb\nc'
+    const shiftedUpdate = updateDiffModelForLineEdit(inserted, shifted)
+    expect(shiftedUpdate ?? computeDiffModel('a\nb\nc', shifted)).toEqual(computeDiffModel('a\nb\nc', shifted))
+  })
+
+  it('keeps the fast path exact across a sweep of single-line edits', () => {
+    const original = 'alpha\nbeta\ngamma\ndelta\nepsilon'
+    const starts = ['alpha\nbeta!\ngamma\ndelta\nepsilon', 'alpha\nbeta\nnew\ngamma\ndelta\nepsilon']
+    const edits = ['', '!', '!!', 'beta', 'gamma', 'alpha', 'x y z', 'delta']
+    for (const start of starts) {
+      const model = computeDiffModel(original, start)
+      for (const row of model.rows) {
+        if (!row.newLine || row.kind === 'context') continue
+        for (const edit of edits) {
+          const lines = start.split('\n')
+          lines[row.newLine - 1] = edit
+          const next = lines.join('\n')
+          const updated = updateDiffModelForLineEdit(model, next)
+          if (updated) expect(updated, `${start} -> ${next}`).toEqual(computeDiffModel(original, next))
+        }
+      }
+    }
+  })
 })

@@ -182,6 +182,14 @@ export function updateDiffModelForLineEdit(
   if (!hunk) return undefined
   const newText = splitDiffLines(current)[line - 1]
   if (newText === undefined) return undefined
+  // An edit that makes the line equal to baseline text can only be resolved
+  // by the full diff: restoring a modified row dissolves the change, and a
+  // line that now matches a removed or neighbouring context line would be
+  // paired differently. Keeping the row would show a phantom change.
+  if (hunk.oldLines.includes(newText)) return undefined
+  const before = previous.rows[previous.rows.indexOf(hunk.rows[0]) - 1]
+  const after = previous.rows[previous.rows.indexOf(hunk.rows[hunk.rows.length - 1]) + 1]
+  if (before?.oldText === newText || after?.oldText === newText) return undefined
   const inline = row.kind === 'modified'
     ? computeInlineDiff(row.oldText ?? '', newText, options.inline ?? 'word')
     : { oldRanges: [], newRanges: [{ start: 0, end: newText.length }] }
