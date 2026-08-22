@@ -211,21 +211,6 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
     return withContent ? createTokenLine(line, index) : createPlaceholderLine(index)
   }
 
-  function replaceLine(index: number, line: TokenizedLine, keepMaterialized: boolean) {
-    const element = createLine(index, line, keepMaterialized)
-    const previous = rendered[index]
-    if (previous) previous.element.replaceWith(element)
-    rendered[index] = {
-      element,
-      line: line.tokenized === false ? undefined : line,
-      materialized: keepMaterialized,
-      source: line.source
-    }
-    if (keepMaterialized) materialized.add(index)
-    else materialized.delete(index)
-    return element
-  }
-
   /**
    * Re-render a materialized line's children for a paint-only change (same
    * source, new tokens). The element keeps its identity, classes and
