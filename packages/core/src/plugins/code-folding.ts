@@ -1,6 +1,14 @@
 import './code-folding.scss'
 
-import { definePlugin } from '@shikitor/core'
+import {
+  definePlugin,
+  LINE_PATCH_EVENT,
+  SCROLL_FOLLOWER_CLASS,
+  setCursorGeometry,
+  setProjectionScroll,
+  setVisualScrollLeft,
+  VIRTUAL_LINE_ATTRIBUTE
+} from '@shikitor/core'
 
 import { insertGutterDecorationSlot } from './_internal/gutter-decoration-slot'
 import { installCursorGeometryLayer } from './cursor-geometry-layer'
@@ -214,6 +222,147 @@ export function isFoldSelectAllShortcut(
     && !event.shiftKey
     && (event.metaKey || event.ctrlKey)
     && event.key.toLowerCase() === 'a'
+}
+
+export type FoldLineSpan = Pick<CodeFoldingRange, 'startLine' | 'endLine'>
+
+/**
+ * Precomputed visibility of every source line for one `ranges` + `collapsed`
+ * state. All arrays are 1-based (index 0 is unused) and sized `lineCount + 1`.
+ */
+export interface FoldHiddenIndex {
+  lineCount: number
+  /** `hidden[line] === 1` when the source line is folded away. */
+  hidden: Uint8Array
+  /** Prefix sums: the number of visible source lines within `1..line`. */
+  visibleRowByLine: Int32Array
+  /**
+   * Index into the range list of the first collapsed range (in list order)
+   * whose body hides the line, or `-1` when the line is visible.
+   */
+  ownerRangeIndex: Int32Array
+  visibleLineCount: number
+}
+
+/**
+ * Build the hidden-line index once per fold state instead of scanning every
+ * range for every line query. Costs O(lineCount + total collapsed body size).
+ */
+export function buildFoldHiddenIndex(
+  ranges: readonly FoldLineSpan[],
+  collapsed: ReadonlySet<number>,
+  lineCount: number
+): FoldHiddenIndex {
+  const size = Math.max(0, Math.trunc(lineCount)) + 1
+  const hidden = new Uint8Array(size)
+  const ownerRangeIndex = new Int32Array(size).fill(-1)
+  // Walk backwards so the first matching range in list order wins, matching
+  // `ranges.find(...)` semantics for nested or overlapping collapsed ranges.
+  for (let index = ranges.length - 1; index >= 0; index--) {
+    const range = ranges[index]
+    if (!collapsed.has(range.startLine)) continue
+    const start = Math.max(1, Math.floor(range.startLine) + 1)
+    const end = Math.min(size - 1, Math.floor(range.endLine))
+    for (let line = start; line <= end; line++) {
+      hidden[line] = 1
+      ownerRangeIndex[line] = index
+    }
+  }
+  const visibleRowByLine = new Int32Array(size)
+  let visibleLineCount = 0
+  for (let line = 1; line < size; line++) {
+    if (hidden[line] === 0) visibleLineCount++
+    visibleRowByLine[line] = visibleLineCount
+  }
+  return { lineCount: size - 1, hidden, visibleRowByLine, ownerRangeIndex, visibleLineCount }
+}
+
+export function isFoldLineHidden(index: FoldHiddenIndex, line: number) {
+  return index.hidden[line] === 1
+}
+
+/**
+ * Visual row (1-based) of a source line once hidden lines are removed. Lines
+ * after the indexed document continue counting as visible rows.
+ */
+export function resolveFoldVisibleRow(index: FoldHiddenIndex, line: number) {
+  if (!(line > 0)) return 1
+  const sourceLine = Math.floor(line)
+  if (sourceLine <= index.lineCount) return Math.max(1, index.visibleRowByLine[sourceLine])
+  return Math.max(1, index.visibleRowByLine[index.lineCount] + (sourceLine - index.lineCount))
+}
+
+export function resolveFoldVisibleLines(index: FoldHiddenIndex) {
+  const lines: number[] = []
+  for (let line = 1; line <= index.lineCount; line++) {
+    if (index.hidden[line] === 0) lines.push(line)
+  }
+  return lines
+}
+
+export interface FoldWidgetHeightEntry {
+  afterLine: number
+  height: number
+}
+
+export interface FoldWidgetHeightIndex {
+  /** Widget anchors sorted ascending. */
+  afterLines: number[]
+  /** `cumulativeHeights[i]` sums the heights of `afterLines[0..i-1]`. */
+  cumulativeHeights: number[]
+}
+
+/**
+ * Sort measured line widgets once so the widget height above any source line
+ * can be answered with a binary search instead of re-reading layout.
+ */
+export function buildFoldWidgetHeightIndex(
+  widgets: readonly FoldWidgetHeightEntry[]
+): FoldWidgetHeightIndex {
+  const entries = widgets
+    .filter(widget => !Number.isNaN(widget.afterLine))
+    .sort((left, right) => left.afterLine - right.afterLine)
+  const afterLines = new Array<number>(entries.length)
+  const cumulativeHeights = new Array<number>(entries.length + 1)
+  cumulativeHeights[0] = 0
+  for (let index = 0; index < entries.length; index++) {
+    afterLines[index] = entries[index].afterLine
+    cumulativeHeights[index + 1] = cumulativeHeights[index] + entries[index].height
+  }
+  return { afterLines, cumulativeHeights }
+}
+
+/** Total height of the widgets anchored strictly before `line`. */
+export function resolveFoldWidgetHeightBefore(index: FoldWidgetHeightIndex, line: number) {
+  let low = 0
+  let high = index.afterLines.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (index.afterLines[middle] < line) low = middle + 1
+    else high = middle
+  }
+  return index.cumulativeHeights[low]
+}
+
+/** Source offset of the first character of every line (`starts[0]` is line 1). */
+export function buildFoldLineStarts(value: string) {
+  const starts = [0]
+  let index = value.indexOf('\n')
+  while (index !== -1) {
+    starts.push(index + 1)
+    index = value.indexOf('\n', index + 1)
+  }
+  return starts
+}
+
+/**
+ * Offset of the end of the line that starts at `start`, mirroring
+ * `RawTextHelper.lineEnd` (a `\r` also terminates the line).
+ */
+export function resolveFoldLineEnd(value: string, start: number) {
+  let offset = start
+  while (offset < value.length && value[offset] !== '\n' && value[offset] !== '\r') offset++
+  return offset
 }
 
 const closingBracket: Record<string, string> = {
@@ -445,6 +594,23 @@ function cloneLineSuffix(line: HTMLElement, startColumn: number) {
   }
 }
 
+/**
+ * Cheap identity of everything a fold pass depends on besides the line DOM
+ * itself; an unchanged signature with no line-structure change since the
+ * previous pass means the pass can be skipped.
+ */
+export function foldRenderSignature(
+  ranges: readonly Pick<FoldRange, 'startLine' | 'endLine' | 'kind' | 'label' | 'presentation' | 'close' | 'closeColumn' | 'suffixLine' | 'suffixColumn'>[],
+  collapsed: ReadonlySet<number>,
+  lineCount: number
+) {
+  let signature = `${lineCount}|${collapsed.size}|`
+  for (const range of ranges) {
+    signature += `${range.startLine}:${range.endLine}:${range.kind}:${range.presentation ?? ''}:${range.label ?? ''}:${range.close ?? ''}:${range.closeColumn ?? ''}:${range.suffixLine ?? ''}:${range.suffixColumn ?? ''}:${collapsed.has(range.startLine) ? 1 : 0};`
+  }
+  return signature
+}
+
 export default definePlugin({
   name: 'code-folding',
   inject: ['shikitor'],
@@ -467,6 +633,10 @@ export default definePlugin({
     let renderFrame: number | undefined
     let postRenderScrollFrame: number | undefined
     let renderPending = true
+    // Whether line elements were added or removed since the last full pass;
+    // together with foldRenderSignature it decides if a pass can be skipped.
+    let structureDirty = true
+    let lastRenderSignature = ''
     let visualMaxScrollTop = 0
     let visualMaxScrollLeft = 0
     let visualScrollLeft = 0
@@ -476,7 +646,7 @@ export default definePlugin({
 
     target.classList.add('shikitor--code-folding')
     target.classList.add('shikitor--fold-rendering')
-    selectionLayer.className = 'shikitor-fold-selection'
+    selectionLayer.className = `shikitor-fold-selection ${SCROLL_FOLLOWER_CLASS}`
     scrollTrack.className = 'shikitor-fold-scrollbar shikitor-fold-scrollbar--vertical'
     scrollThumb.className = 'shikitor-fold-scrollbar__thumb'
     horizontalScrollTrack.className = 'shikitor-fold-scrollbar shikitor-fold-scrollbar--horizontal'
@@ -487,38 +657,112 @@ export default definePlugin({
     horizontalScrollTrack.append(horizontalScrollThumb)
     container.append(selectionLayer, scrollTrack, horizontalScrollTrack)
 
+    // Line-count cache keyed by value identity: `shikitor.value` is a stable
+    // string reference between edits, so the comparison is O(1) in practice.
+    let countedValue: string | undefined
+    let lineCount = 1
+    function currentLineCount() {
+      const value = shikitor.value
+      if (value !== countedValue) {
+        countedValue = value
+        let count = 1
+        let index = value.indexOf('\n')
+        while (index !== -1) {
+          count++
+          index = value.indexOf('\n', index + 1)
+        }
+        lineCount = count
+      }
+      return lineCount
+    }
+
+    // Hidden-line index rebuilt lazily whenever `ranges`, `collapsed` or the
+    // document value change, so per-line queries do not rescan every range.
+    let hiddenIndexCache: FoldHiddenIndex | undefined
+    let hiddenIndexValue: string | undefined
+    let visibleLinesCache: number[] | undefined
+    function invalidateHiddenIndex() {
+      hiddenIndexCache = undefined
+      visibleLinesCache = undefined
+    }
+    function hiddenIndex() {
+      const value = shikitor.value
+      if (hiddenIndexCache && hiddenIndexValue === value) return hiddenIndexCache
+      hiddenIndexValue = value
+      hiddenIndexCache = buildFoldHiddenIndex(ranges, collapsed, currentLineCount())
+      visibleLinesCache = undefined
+      return hiddenIndexCache
+    }
+
     function isLineHidden(line: number) {
-      return ranges.some(range =>
-        collapsed.has(range.startLine)
-        && line > range.startLine
-        && line <= range.endLine
-      )
+      return isFoldLineHidden(hiddenIndex(), line)
+    }
+
+    /** First collapsed range (in `ranges` order) whose body hides `line`. */
+    function hiddenRangeForLine(line: number): FoldRange | undefined {
+      const owner = hiddenIndex().ownerRangeIndex[line]
+      return owner === undefined || owner < 0 ? undefined : ranges[owner]
     }
 
     function visibleRow(line: number) {
-      let row = 0
-      for (let sourceLine = 1; sourceLine <= line; sourceLine++) {
-        if (!isLineHidden(sourceLine)) row++
-      }
-      return Math.max(1, row)
+      return resolveFoldVisibleRow(hiddenIndex(), line)
     }
 
     function visibleLines() {
-      return shikitor.value
-        .split('\n')
-        .map((_, index) => index + 1)
-        .filter(line => !isLineHidden(line))
+      const index = hiddenIndex()
+      return visibleLinesCache ??= resolveFoldVisibleLines(index)
+    }
+
+    // Layout-derived geometry is cached for the current animation frame so a
+    // render pass, a pointer gesture or a selection update measures the line
+    // widgets and the computed line height once instead of per line.
+    let frameCacheFrame: number | undefined
+    let cachedLineHeight: number | undefined
+    let cachedWidgetHeights: FoldWidgetHeightIndex | undefined
+    function invalidateFrameCaches() {
+      cachedLineHeight = undefined
+      cachedWidgetHeights = undefined
+      if (frameCacheFrame !== undefined) {
+        cancelAnimationFrame(frameCacheFrame)
+        frameCacheFrame = undefined
+      }
+    }
+    function retainFrameCaches() {
+      if (frameCacheFrame !== undefined) return
+      frameCacheFrame = requestAnimationFrame(() => {
+        frameCacheFrame = undefined
+        cachedLineHeight = undefined
+        cachedWidgetHeights = undefined
+      })
+    }
+    function lineHeightPx() {
+      if (cachedLineHeight === undefined) {
+        cachedLineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
+        retainFrameCaches()
+      }
+      return cachedLineHeight
+    }
+    function widgetHeights() {
+      if (cachedWidgetHeights === undefined) {
+        const entries: FoldWidgetHeightEntry[] = []
+        for (const widget of target.querySelectorAll<HTMLElement>('.shikitor-line-widget')) {
+          entries.push({
+            afterLine: Number(widget.dataset.afterLine),
+            height: widget.getBoundingClientRect().height
+          })
+        }
+        cachedWidgetHeights = buildFoldWidgetHeightIndex(entries)
+        retainFrameCaches()
+      }
+      return cachedWidgetHeights
     }
 
     function widgetHeightBeforeLine(line: number) {
-      return [...target.querySelectorAll<HTMLElement>('.shikitor-line-widget')]
-        .filter(widget => Number(widget.dataset.afterLine) < line)
-        .reduce((height, widget) => height + widget.getBoundingClientRect().height, 0)
+      return resolveFoldWidgetHeightBefore(widgetHeights(), line)
     }
 
     function sourceLineTop(line: number) {
-      const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
-      return (visibleRow(line) - 1) * lineHeight + widgetHeightBeforeLine(line)
+      return (visibleRow(line) - 1) * lineHeightPx() + widgetHeightBeforeLine(line)
     }
 
     function syncHorizontalScroll(requestedScrollLeft?: number) {
@@ -527,7 +771,10 @@ export default definePlugin({
       // wider than the folded document. The rendered output is the visual
       // source of truth for horizontal geometry, just like visibleLines() is
       // for the vertical axis.
-      const contentWidth = output.scrollWidth
+      const contentWidth = Math.max(
+        output.scrollWidth,
+        output.querySelector<HTMLElement>('.shikitor-output-lines')?.offsetWidth ?? 0
+      )
       const nextVisualOwnsHorizontalScroll = shouldUseFoldVisualHorizontalScroll(
         collapsed.size > 0,
         contentWidth,
@@ -556,14 +803,8 @@ export default definePlugin({
       if (!visualOwnsHorizontalScroll && input.scrollLeft !== metrics.scrollTop) {
         input.scrollLeft = metrics.scrollTop
       }
-      output.scrollLeft = metrics.scrollTop
-      if (visualOwnsHorizontalScroll) {
-        target.style.setProperty('--shikitor-visual-scroll-l', `${metrics.scrollTop}px`)
-      } else {
-        target.style.removeProperty('--shikitor-visual-scroll-l')
-      }
-      target.style.setProperty('--shikitor-scroll-l', `${metrics.scrollTop}px`)
-      target.style.setProperty('--shikitor-offset-x', `-${metrics.scrollTop}px`)
+      setVisualScrollLeft(target, visualOwnsHorizontalScroll ? metrics.scrollTop : undefined)
+      setProjectionScroll(target, output, { left: metrics.scrollTop })
 
       horizontalScrollTrack.hidden = metrics.maxScrollTop === 0
       horizontalScrollThumb.style.width = `${metrics.thumbHeight}px`
@@ -583,11 +824,16 @@ export default definePlugin({
       }
 
       target.classList.add('shikitor--fold-collapsed')
-      const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
+      const lineHeight = lineHeightPx()
       const viewportHeight = container.clientHeight
+      // The projection may be scrolled through a transform (line widgets make
+      // the output overflow visible), which shrinks scrollHeight; the layout
+      // height of the line container is transform-independent.
+      const projectedHeight = output.querySelector<HTMLElement>('.shikitor-output-lines')?.offsetHeight ?? 0
       const contentHeight = Math.max(
-        visibleLines().length * lineHeight,
-        output.scrollHeight
+        hiddenIndex().visibleLineCount * lineHeight,
+        output.scrollHeight,
+        projectedHeight
       )
       const trackHeight = Math.max(0, viewportHeight - 4)
       const metrics = resolveFoldScrollMetrics(
@@ -603,10 +849,8 @@ export default definePlugin({
       // The creator's normal scroll synchronizer will therefore read this same
       // value instead of the textarea's full-source scrollHeight.
       if (input.scrollTop !== metrics.scrollTop) input.scrollTop = metrics.scrollTop
-      output.scrollTop = metrics.scrollTop
+      setProjectionScroll(target, output, { top: metrics.scrollTop })
       gutters.style.marginTop = `-${metrics.scrollTop}px`
-      target.style.setProperty('--shikitor-scroll-t', `${metrics.scrollTop}px`)
-      target.style.setProperty('--shikitor-offset-y', `-${metrics.scrollTop}px`)
 
       scrollTrack.hidden = metrics.maxScrollTop === 0
       scrollThumb.style.height = `${metrics.thumbHeight}px`
@@ -619,11 +863,7 @@ export default definePlugin({
     const geometryLayer = installCursorGeometryLayer(
       shikitor,
       (getCursorAbsolutePosition, cursor, lineOffset) => {
-        const hiddenRange = ranges.find(range =>
-          collapsed.has(range.startLine)
-          && cursor.line > range.startLine
-          && cursor.line <= range.endLine
-        )
+        const hiddenRange = hiddenRangeForLine(cursor.line)
         if (hiddenRange) {
           const outputLine = output.querySelector<HTMLElement>(
             `[data-line="${hiddenRange.startLine}"]`
@@ -669,7 +909,7 @@ export default definePlugin({
           : cursor
         const position = getCursorAbsolutePosition(visualCursor, lineOffset)
         const hiddenLinesBeforeCursor = visualCursor.line - visibleRow(visualCursor.line)
-        const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
+        const lineHeight = lineHeightPx()
         return {
           x: position.x,
           y: position.y - hiddenLinesBeforeCursor * lineHeight
@@ -777,7 +1017,7 @@ export default definePlugin({
     function pointerPosition(event: PointerEvent) {
       const lines = visibleLines()
       const rect = input.getBoundingClientRect()
-      const lineHeight = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
+      const lineHeight = lineHeightPx()
       const visualY = Math.max(0, event.clientY - rect.top + input.scrollTop)
       const line = lines.find(sourceLine => visualY < sourceLineTop(sourceLine) + lineHeight)
         ?? lines.at(-1)
@@ -844,7 +1084,7 @@ export default definePlugin({
     }
 
     function renderSelection() {
-      selectionLayer.replaceChildren()
+      if (selectionLayer.firstChild) selectionLayer.replaceChildren()
       const start = Math.min(input.selectionStart, input.selectionEnd)
       const end = Math.max(input.selectionStart, input.selectionEnd)
       if (start === end || document.activeElement !== input) return
@@ -882,7 +1122,7 @@ export default definePlugin({
       const configured = typeof options.ranges === 'function'
         ? options.ranges()
         : options.ranges
-      const lineCount = shikitor.value.split('\n').length
+      const lineCount = currentLineCount()
       ranges = configured
         ? configured
             .filter(range => (
@@ -927,6 +1167,7 @@ export default definePlugin({
           if (!previousStarts.has(range.startLine)) collapsed.add(range.startLine)
         }
       }
+      invalidateHiddenIndex()
     }
 
     function render() {
@@ -935,34 +1176,144 @@ export default definePlugin({
         cancelAnimationFrame(postRenderScrollFrame)
         postRenderScrollFrame = undefined
       }
+      const signature = foldRenderSignature(ranges, collapsed, currentLineCount())
+      if (!structureDirty && signature === lastRenderSignature) {
+        // Nothing that the fold DOM depends on changed (typical keystroke):
+        // keep the DOM, only refresh the cheap overlays.
+        renderPending = false
+        target.classList.remove('shikitor--fold-rendering')
+        renderSelection()
+        setCursorGeometry(target, shikitor._getCursorAbsolutePosition(shikitor.cursor, -1))
+        return
+      }
       const preservedScrollLeft = visualScrollLeft
+      // Geometry measured before this pass describes the previous DOM; it is
+      // re-measured lazily after the writes below.
+      invalidateFrameCaches()
+      // The caret geometry does not depend on the fold DOM written below (it
+      // uses the hidden-line index, cached widget heights and a detached
+      // measuring span), so it is read before the writes to avoid forcing a
+      // second style and layout flush at the end of the pass.
+      const cursorPosition = shikitor._getCursorAbsolutePosition(shikitor.cursor, -1)
       observer.disconnect()
-      output.querySelectorAll<HTMLElement>('.shikitor-fold-line-content')
-        .forEach(content => content.replaceWith(...content.childNodes))
-      output.querySelectorAll<HTMLElement>(
-        '.shikitor-fold-placeholder, .shikitor-fold-suffix'
-      )
-        .forEach(element => element.remove())
-      gutters.querySelectorAll<HTMLElement>('.shikitor-fold-toggle-slot')
-        .forEach(element => element.remove())
-      target.querySelectorAll<HTMLElement>('.shikitor-output-line, .shikitor-gutter-line')
-        .forEach(element => {
-          element.hidden = false
-          if (element.dataset.foldPresentation === 'line') delete element.dataset.foldLine
-          delete element.dataset.foldPresentation
-        })
+      // Existing fold DOM is indexed by its line instead of being torn down up
+      // front: a placeholder row that is unchanged since the previous pass is
+      // kept, so a keystroke elsewhere does not re-insert every collapsed
+      // region and invalidate the style of every token it wraps.
+      interface FoldDecor { content?: HTMLElement; placeholder?: HTMLElement; suffix?: HTMLElement }
+      const existingDecor = new Map<HTMLElement, FoldDecor>()
+      for (const element of output.querySelectorAll<HTMLElement>(
+        '.shikitor-fold-line-content, .shikitor-fold-placeholder, .shikitor-fold-suffix'
+      )) {
+        const line = element.parentElement
+        if (!(line instanceof HTMLElement)) continue
+        const decor = existingDecor.get(line) ?? {}
+        if (element.classList.contains('shikitor-fold-line-content')) decor.content = element
+        else if (element.classList.contains('shikitor-fold-placeholder')) decor.placeholder = element
+        else decor.suffix = element
+        existingDecor.set(line, decor)
+      }
+      const removeDecor = (decor: FoldDecor) => {
+        decor.content?.replaceWith(...decor.content.childNodes)
+        decor.placeholder?.remove()
+        decor.suffix?.remove()
+      }
+      const placeholderMatches = (
+        placeholder: HTMLElement,
+        expected: { className: string; foldKind: string; foldLine: string; label: string; sourceEnd: string; sourceStart: string; title: string }
+      ) => placeholder.className === expected.className
+        && placeholder.dataset.foldLine === expected.foldLine
+        && placeholder.dataset.foldKind === expected.foldKind
+        && placeholder.dataset.foldSourceStart === expected.sourceStart
+        && placeholder.dataset.foldSourceEnd === expected.sourceEnd
+        && placeholder.title === expected.title
+        && placeholder.textContent === expected.label
 
-      for (const gutter of gutters.querySelectorAll<HTMLElement>('.shikitor-gutter-line')) {
-        const number = gutter.querySelector<HTMLElement>('.shikitor-gutter-line-number')
+      // Reset sweep: one pass over every line element resets fold state,
+      // indexes the first output/gutter element per line number (replacing
+      // the per-line `[data-line="N"]` queries of this pass) and prepares the
+      // gutter toggle slots. Lines that are still hidden are remembered
+      // instead of being un-hidden immediately so a line that stays folded
+      // costs no attribute writes at all.
+      const previouslyHidden = new Set<HTMLElement>()
+      const outputLines = new Map<number, HTMLElement>()
+      const gutterLines = new Map<number, HTMLElement>()
+      // A toggle slot that is still the immediate left neighbour of its line
+      // number is exactly where a fresh insertion would land, so reuse it and
+      // only drop its previous toggle. Any other stale slot is removed.
+      const staleSlots = gutters.querySelectorAll<HTMLElement>('.shikitor-fold-toggle-slot')
+      const reusedSlots = new Set<Element>()
+      const slotByGutter = new Map<Element, HTMLElement>()
+      // Fold presentation attributes are removed only from elements that do
+      // not receive them again below, so unchanged lines see no writes.
+      const stalePresentation = new Set<HTMLElement>()
+      for (const element of target.querySelectorAll<HTMLElement>(
+        '.shikitor-output-line, .shikitor-gutter-line'
+      )) {
+        if (element.hidden) previouslyHidden.add(element)
+        if (element.hasAttribute('data-fold-presentation')) stalePresentation.add(element)
+        const isGutterLine = element.classList.contains('shikitor-gutter-line')
+        const raw = element.getAttribute('data-line')
+        if (raw !== null) {
+          const line = Number(raw)
+          // Only canonical numbers can match a `[data-line="${line}"]` query.
+          if (String(line) === raw) {
+            if (isGutterLine) {
+              if (!gutterLines.has(line) && gutters.contains(element)) gutterLines.set(line, element)
+            } else if (!outputLines.has(line) && output.contains(element)) {
+              outputLines.set(line, element)
+            }
+          }
+        }
+        if (!isGutterLine || !gutters.contains(element)) continue
+        const number = element.querySelector<HTMLElement>('.shikitor-gutter-line-number')
         if (!number) continue
-        const slot = insertGutterDecorationSlot(number, 'left')
-        slot.classList.add('shikitor-fold-toggle-slot')
+        const previous = number.previousElementSibling
+        let slot: HTMLElement
+        if (
+          previous instanceof HTMLElement
+          && previous.classList.contains('shikitor-fold-toggle-slot')
+        ) {
+          slot = previous
+          reusedSlots.add(slot)
+          if (slot.firstChild) slot.replaceChildren()
+        } else {
+          slot = insertGutterDecorationSlot(number, 'left')
+          slot.classList.add('shikitor-fold-toggle-slot')
+        }
+        slotByGutter.set(element, slot)
+      }
+      for (const slot of staleSlots) {
+        if (!reusedSlots.has(slot)) slot.remove()
+      }
+
+      // Source offsets for placeholders, resolved from one line-start table
+      // instead of splitting the whole document per lookup.
+      const value = shikitor.value
+      let lineStarts: number[] | undefined
+      const lineStartOffset = (line: number) => {
+        const start = (lineStarts ??= buildFoldLineStarts(value))[line - 1]
+        return start ?? shikitor.rawTextHelper.lineStart({ line, character: 0 })
+      }
+      const lineEndOffset = (line: number) => {
+        const start = (lineStarts ??= buildFoldLineStarts(value))[line - 1]
+        return start === undefined
+          ? shikitor.rawTextHelper.lineEnd({ line, character: 0 })
+          : resolveFoldLineEnd(value, start)
+      }
+      const sourceOffset = (line: number, character: number) => {
+        const start = (lineStarts ??= buildFoldLineStarts(value))[line - 1]
+        return start === undefined
+          ? shikitor.rawTextHelper.resolvePosition({ line, character }).offset
+          : start + character
       }
 
       for (const range of [...ranges].reverse()) {
-        const gutter = gutters.querySelector<HTMLElement>(`[data-line="${range.startLine}"]`)
-        const outputLine = output.querySelector<HTMLElement>(`[data-line="${range.startLine}"]`)
-        const toggleSlot = gutter?.querySelector<HTMLElement>('.shikitor-fold-toggle-slot')
+        const gutter = gutterLines.get(range.startLine)
+        const outputLine = outputLines.get(range.startLine)
+        const toggleSlot = gutter && (
+          slotByGutter.get(gutter) ?? gutter.querySelector<HTMLElement>('.shikitor-fold-toggle-slot')
+        )
         if (!gutter || !outputLine || !toggleSlot) continue
         const isCollapsed = collapsed.has(range.startLine)
         const toggle = document.createElement('button')
@@ -980,56 +1331,88 @@ export default definePlugin({
 
         if (!isCollapsed) continue
         for (let line = range.startLine + 1; line <= range.endLine; line++) {
-          output.querySelector<HTMLElement>(`[data-line="${line}"]`)?.setAttribute('hidden', '')
-          gutters.querySelector<HTMLElement>(`[data-line="${line}"]`)?.setAttribute('hidden', '')
+          const hiddenOutputLine = outputLines.get(line)
+          if (hiddenOutputLine && !previouslyHidden.delete(hiddenOutputLine)) {
+            hiddenOutputLine.setAttribute('hidden', '')
+          }
+          const hiddenGutterLine = gutterLines.get(line)
+          if (hiddenGutterLine && !previouslyHidden.delete(hiddenGutterLine)) {
+            hiddenGutterLine.setAttribute('hidden', '')
+          }
         }
-        const placeholder = document.createElement('button')
-        placeholder.type = 'button'
-        placeholder.className = 'shikitor-fold-placeholder'
-        placeholder.dataset.foldLine = String(range.startLine)
-        placeholder.dataset.foldKind = range.kind
-        placeholder.title = expandLabel
-        placeholder.setAttribute('aria-label', expandLabel)
-        placeholder.textContent = range.label ?? '...'
         const suffixLine = range.suffixLine ?? range.endLine
         const suffixColumn = range.suffixColumn ?? range.closeColumn
         const linePresentation = range.presentation === 'line'
         const placeholderStart = linePresentation
-          ? shikitor.rawTextHelper.lineStart({ line: range.startLine, character: 0 })
-          : shikitor.rawTextHelper.lineEnd({ line: range.startLine, character: 0 })
-        const suffixStart = shikitor.rawTextHelper.resolvePosition({
-          line: suffixLine,
-          character: suffixColumn
-        }).offset
-        placeholder.dataset.foldSourceStart = String(placeholderStart)
-        placeholder.dataset.foldSourceEnd = String(
-          linePresentation
-            ? shikitor.rawTextHelper.lineEnd({ line: range.endLine, character: 0 })
-            : range.kind === 'line-comment' || !range.close
-            ? shikitor.rawTextHelper.lineEnd({ line: range.endLine, character: 0 })
-            : suffixStart
-        )
+          ? lineStartOffset(range.startLine)
+          : lineEndOffset(range.startLine)
+        const suffixStart = sourceOffset(suffixLine, suffixColumn)
+        const expected = {
+          className: linePresentation
+            ? 'shikitor-fold-placeholder shikitor-fold-placeholder--line'
+            : 'shikitor-fold-placeholder',
+          foldKind: range.kind,
+          foldLine: String(range.startLine),
+          label: range.label ?? '...',
+          sourceEnd: String(
+            linePresentation
+              ? lineEndOffset(range.endLine)
+              : range.kind === 'line-comment' || !range.close
+              ? lineEndOffset(range.endLine)
+              : suffixStart
+          ),
+          sourceStart: String(placeholderStart),
+          title: expandLabel
+        }
+        const decor = existingDecor.get(outputLine)
+        if (linePresentation) {
+          if (outputLine.dataset.foldPresentation !== 'line') outputLine.dataset.foldPresentation = 'line'
+          if (gutter.dataset.foldPresentation !== 'line') gutter.dataset.foldPresentation = 'line'
+          if (gutter.dataset.foldLine !== expected.foldLine) gutter.dataset.foldLine = expected.foldLine
+          stalePresentation.delete(outputLine)
+          stalePresentation.delete(gutter)
+          if (
+            decor?.content && decor.placeholder && !decor.suffix
+            && outputLine.childNodes.length === 2
+            && outputLine.firstChild === decor.content
+            && outputLine.lastChild === decor.placeholder
+            && placeholderMatches(decor.placeholder, expected)
+          ) {
+            existingDecor.delete(outputLine)
+            continue
+          }
+        }
+        if (decor) {
+          removeDecor(decor)
+          existingDecor.delete(outputLine)
+        }
+        const placeholder = document.createElement('button')
+        placeholder.type = 'button'
+        placeholder.className = expected.className
+        placeholder.dataset.foldLine = expected.foldLine
+        placeholder.dataset.foldKind = expected.foldKind
+        placeholder.title = expected.title
+        placeholder.setAttribute('aria-label', expected.title)
+        placeholder.textContent = expected.label
+        placeholder.dataset.foldSourceStart = expected.sourceStart
+        placeholder.dataset.foldSourceEnd = expected.sourceEnd
         if (linePresentation) {
           const content = document.createElement('span')
           content.className = 'shikitor-fold-line-content'
           content.append(...outputLine.childNodes)
-          placeholder.classList.add('shikitor-fold-placeholder--line')
-          outputLine.dataset.foldPresentation = 'line'
-          gutter.dataset.foldPresentation = 'line'
-          gutter.dataset.foldLine = String(range.startLine)
           outputLine.append(content, placeholder)
           continue
         }
         outputLine.append(placeholder)
         if (range.kind === 'line-comment' || !range.close) continue
-        const closingLine = output.querySelector<HTMLElement>(`[data-line="${suffixLine}"]`)
-        const suffixContent = closingLine && cloneLineSuffix(closingLine, suffixColumn)
+        const closingLine = outputLines.get(suffixLine)
+        const suffixContent = closingLine && !closingLine.hasAttribute(VIRTUAL_LINE_ATTRIBUTE)
+          ? cloneLineSuffix(closingLine, suffixColumn)
+          : undefined
         const suffix = document.createElement('span')
         suffix.className = 'shikitor-fold-suffix'
         suffix.dataset.foldSourceStart = String(suffixStart)
-        suffix.dataset.foldSourceEnd = String(
-          shikitor.rawTextHelper.lineEnd({ line: suffixLine, character: 0 })
-        )
+        suffix.dataset.foldSourceEnd = String(lineEndOffset(suffixLine))
         if (suffixContent) {
           suffix.append(suffixContent)
         } else {
@@ -1037,9 +1420,22 @@ export default definePlugin({
         }
         outputLine.append(suffix)
       }
+      // Fold DOM of lines that are no longer collapsed, and presentation
+      // attributes that were not claimed by a collapsed range.
+      for (const decor of existingDecor.values()) removeDecor(decor)
+      for (const element of stalePresentation) {
+        if (element.getAttribute('data-fold-presentation') === 'line') {
+          element.removeAttribute('data-fold-line')
+        }
+        element.removeAttribute('data-fold-presentation')
+      }
+      // Lines that were hidden by the previous pass but are visible now.
+      for (const element of previouslyHidden) element.hidden = false
       observer.observe(output, { childList: true, subtree: true })
       observer.observe(gutters, { childList: true, subtree: true })
       renderPending = false
+      structureDirty = false
+      lastRenderSignature = signature
       target.classList.remove('shikitor--fold-rendering')
       // Replacing fold placeholders changes the output's intrinsic width.
       // Browsers can expose the temporary viewport width until the next
@@ -1051,9 +1447,7 @@ export default definePlugin({
         syncVisualScroll(input.scrollTop, preservedScrollLeft)
       })
       renderSelection()
-      const cursorPosition = shikitor._getCursorAbsolutePosition(shikitor.cursor, -1)
-      target.style.setProperty('--shikitor-cursor-t', `${cursorPosition.y}px`)
-      target.style.setProperty('--shikitor-cursor-l', `${cursorPosition.x}px`)
+      setCursorGeometry(target, cursorPosition)
     }
 
     function scheduleRender() {
@@ -1077,6 +1471,7 @@ export default definePlugin({
         }
         collapsed.add(line)
       }
+      invalidateHiddenIndex()
       scheduleRender()
     }
 
@@ -1084,14 +1479,36 @@ export default definePlugin({
       [...record.addedNodes, ...record.removedNodes].some(node => (
         node instanceof Element
         && (
-          node.matches('.shikitor-output-line, .shikitor-gutter-line')
-          || !!node.querySelector('.shikitor-output-line, .shikitor-gutter-line')
+          node.matches('.shikitor-output-line[data-line], .shikitor-gutter-line[data-line]')
+          || !!node.querySelector('.shikitor-output-line[data-line], .shikitor-gutter-line[data-line]')
         )
       ))
     ))
     const observer = new MutationObserver(records => {
-      if (hasLineStructureMutation(records)) scheduleRender()
+      if (!hasLineStructureMutation(records)) return
+      structureDirty = true
+      scheduleRender()
     })
+    // A line whose children were re-rendered in place (same source, new
+    // tokens, or materialized content) lost any placeholder, suffix or
+    // content wrapper it carried, and a collapsed range's suffix clone may
+    // describe it; re-render in that case. Lines that just became
+    // placeholders are off-screen and are decorated again when they return.
+    const onLinePatch = (event: Event) => {
+      const element = event.target
+      if (!(element instanceof HTMLElement)) return
+      if (element.hasAttribute(VIRTUAL_LINE_ATTRIBUTE)) return
+      const line = Number(element.dataset.line)
+      if (!Number.isInteger(line)) return
+      const affected = ranges.some(range => (
+        range.startLine === line
+        || (collapsed.has(range.startLine) && (range.suffixLine ?? range.endLine) === line)
+      ))
+      if (!affected) return
+      structureDirty = true
+      scheduleRender()
+    }
+    output.addEventListener(LINE_PATCH_EVENT, onLinePatch)
     const onClick = (event: Event) => {
       if (!(event.target instanceof Element)) return
       const control = event.target.closest<HTMLElement>('[data-fold-line]')
@@ -1114,7 +1531,7 @@ export default definePlugin({
     input.addEventListener('scroll', onInputScroll)
     const normalizeWheelDelta = (event: WheelEvent, delta: number) => {
       if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-        return delta * (Number.parseFloat(getComputedStyle(input).lineHeight) || 22)
+        return delta * lineHeightPx()
       }
       if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
         return delta * container.clientHeight
@@ -1423,11 +1840,7 @@ export default definePlugin({
 
     const visibleLineForOffset = (offset: number) => {
       const position = shikitor.rawTextHelper.resolvePosition(offset)
-      return ranges.find(range =>
-        collapsed.has(range.startLine)
-        && position.line > range.startLine
-        && position.line <= range.endLine
-      )?.startLine ?? position.line
+      return hiddenRangeForLine(position.line)?.startLine ?? position.line
     }
     const visualBoundariesForLine = (line: number) => {
       const outputLine = output.querySelector<HTMLElement>(`[data-line="${line}"]`)
@@ -1735,11 +2148,7 @@ export default definePlugin({
     })
     ctx.on('shikitor/cursor-change', cursor => {
       if (!cursor) return
-      const hiddenRange = ranges.find(range =>
-        collapsed.has(range.startLine)
-        && cursor.line > range.startLine
-        && cursor.line <= range.endLine
-      )
+      const hiddenRange = hiddenRangeForLine(cursor.line)
       if (!hiddenRange) return
       // Pointer mapping deliberately allows a collapsed visual suffix to
       // retain its real hidden-source offset. Do not immediately clamp that
@@ -1776,9 +2185,11 @@ export default definePlugin({
     scheduleRender()
     options.onReady?.(controller)
     return () => {
+      output.removeEventListener(LINE_PATCH_EVENT, onLinePatch)
       observer.disconnect()
       if (renderFrame !== undefined) cancelAnimationFrame(renderFrame)
       if (postRenderScrollFrame !== undefined) cancelAnimationFrame(postRenderScrollFrame)
+      invalidateFrameCaches()
       target.removeEventListener('click', onClick)
       input.removeEventListener('scroll', onInputScroll)
       container.removeEventListener('wheel', onWheel)
@@ -1821,7 +2232,7 @@ export default definePlugin({
       input.removeEventListener('focus', onSelectionChange)
       input.removeEventListener('blur', onSelectionChange)
       geometryLayer.dispose()
-      target.style.removeProperty('--shikitor-visual-scroll-l')
+      setVisualScrollLeft(target, undefined)
       target.classList.remove(
         'shikitor--code-folding',
         'shikitor--fold-rendering',

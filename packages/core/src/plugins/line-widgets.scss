@@ -11,6 +11,8 @@
     // A line widget belongs to the whole editor row rather than only the code
     // column. The editor root still clips the final surface, while allowing
     // the widget to extend through the output's left edge into the gutter.
+    // A visible-overflow box cannot scroll; the core moves the full line
+    // projection with a transform on its <pre> instead of scrollTop.
     overflow: visible;
     pointer-events: none;
   }

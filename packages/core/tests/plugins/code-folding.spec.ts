@@ -1,15 +1,185 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildFoldHiddenIndex,
+  buildFoldLineStarts,
+  buildFoldWidgetHeightIndex,
   findFoldRanges,
+  isFoldLineHidden,
   isFoldSelectAllShortcut,
   normalizeFoldedKeyboardOffset,
   resolveFoldKeyboardSelection,
+  resolveFoldLineEnd,
   resolveFoldScrollMetrics,
+  resolveFoldVisibleLines,
+  resolveFoldVisibleRow,
   resolveFoldVisualKeyboardOffset,
   resolveFoldVisualOffset,
+  resolveFoldWidgetHeightBefore,
   shouldUseFoldVisualHorizontalScroll
 } from '../../src/plugins/code-folding'
+import { getRawTextHelper } from '../../src/utils/getRawTextHelper'
+
+/** Reference implementation of the per-call range scan the index replaces. */
+function referenceHidden(
+  ranges: readonly { startLine: number; endLine: number }[],
+  collapsed: ReadonlySet<number>,
+  line: number
+) {
+  return ranges.some(range =>
+    collapsed.has(range.startLine)
+    && line > range.startLine
+    && line <= range.endLine
+  )
+}
+
+describe('code folding hidden-line index', () => {
+  const ranges = [
+    { startLine: 2, endLine: 6 },
+    { startLine: 4, endLine: 5 },
+    { startLine: 9, endLine: 12 },
+    { startLine: 14, endLine: 14 }
+  ]
+
+  it('marks the bodies of collapsed ranges hidden and keeps start lines visible', () => {
+    const index = buildFoldHiddenIndex(ranges, new Set([2, 9, 14]), 15)
+
+    expect(index.lineCount).toBe(15)
+    expect([...index.hidden].slice(1)).toEqual([
+      0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0
+    ])
+    expect(index.visibleLineCount).toBe(8)
+    for (let line = 0; line <= 16; line++) {
+      expect(isFoldLineHidden(index, line)).toBe(referenceHidden(ranges, new Set([2, 9, 14]), line))
+    }
+  })
+
+  it('ignores expanded ranges and clamps ranges that run past the document', () => {
+    const index = buildFoldHiddenIndex(
+      [{ startLine: 1, endLine: 3 }, { startLine: 3, endLine: 40 }],
+      new Set([3]),
+      5
+    )
+
+    expect([...index.hidden].slice(1)).toEqual([0, 0, 0, 1, 1])
+    expect(index.visibleLineCount).toBe(3)
+    expect(isFoldLineHidden(index, 6)).toBe(false)
+    expect(isFoldLineHidden(index, 40)).toBe(false)
+    expect(resolveFoldVisibleLines(index)).toEqual([1, 2, 3])
+  })
+
+  it('attributes hidden lines to the first collapsed range in list order', () => {
+    const overlapping = [
+      { startLine: 10, endLine: 20 },
+      { startLine: 1, endLine: 4 },
+      { startLine: 3, endLine: 12 }
+    ]
+    const collapsed = new Set([10, 1, 3])
+    const index = buildFoldHiddenIndex(overlapping, collapsed, 20)
+    const referenceOwner = (line: number) => overlapping.findIndex(range =>
+      collapsed.has(range.startLine) && line > range.startLine && line <= range.endLine
+    )
+
+    for (let line = 1; line <= 20; line++) {
+      expect(index.ownerRangeIndex[line]).toBe(referenceOwner(line))
+    }
+    expect(index.ownerRangeIndex[2]).toBe(1)
+    expect(index.ownerRangeIndex[4]).toBe(1)
+    expect(index.ownerRangeIndex[5]).toBe(2)
+    expect(index.ownerRangeIndex[11]).toBe(0)
+    expect(index.ownerRangeIndex[20]).toBe(0)
+    expect(index.ownerRangeIndex[1]).toBe(-1)
+  })
+
+  it('maps source lines onto visual rows with prefix sums', () => {
+    const collapsed = new Set([2, 9])
+    const index = buildFoldHiddenIndex(ranges, collapsed, 15)
+    const referenceRow = (line: number) => {
+      let row = 0
+      for (let sourceLine = 1; sourceLine <= line; sourceLine++) {
+        if (!referenceHidden(ranges, collapsed, sourceLine)) row++
+      }
+      return Math.max(1, row)
+    }
+
+    for (let line = 0; line <= 18; line++) {
+      expect(resolveFoldVisibleRow(index, line)).toBe(referenceRow(line))
+    }
+    expect(resolveFoldVisibleRow(index, 1)).toBe(1)
+    expect(resolveFoldVisibleRow(index, 2)).toBe(2)
+    expect(resolveFoldVisibleRow(index, 6)).toBe(2)
+    expect(resolveFoldVisibleRow(index, 7)).toBe(3)
+    expect(resolveFoldVisibleRow(index, 13)).toBe(6)
+    expect(resolveFoldVisibleRow(index, 0)).toBe(1)
+    expect(resolveFoldVisibleRow(index, Number.NaN)).toBe(1)
+    expect(resolveFoldVisibleRow(index, 18)).toBe(11)
+    expect(resolveFoldVisibleLines(index)).toEqual([1, 2, 7, 8, 9, 13, 14, 15])
+  })
+
+  it('lists every line when nothing is collapsed', () => {
+    const index = buildFoldHiddenIndex(ranges, new Set(), 4)
+
+    expect(resolveFoldVisibleLines(index)).toEqual([1, 2, 3, 4])
+    expect(index.visibleLineCount).toBe(4)
+    expect(resolveFoldVisibleRow(index, 4)).toBe(4)
+  })
+})
+
+describe('code folding widget height index', () => {
+  it('sums the widgets anchored strictly before a line', () => {
+    const index = buildFoldWidgetHeightIndex([
+      { afterLine: 8, height: 40 },
+      { afterLine: 2, height: 10 },
+      { afterLine: 0, height: 5 },
+      { afterLine: 8, height: 4 },
+      { afterLine: Number.NaN, height: 100 }
+    ])
+    const reference = (line: number) => [5, 10, 40, 4]
+      .reduce((sum, height, position) => sum + ([0, 2, 8, 8][position] < line ? height : 0), 0)
+
+    expect(index.afterLines).toEqual([0, 2, 8, 8])
+    expect(index.cumulativeHeights).toEqual([0, 5, 15, 55, 59])
+    for (let line = 0; line <= 12; line++) {
+      expect(resolveFoldWidgetHeightBefore(index, line)).toBe(reference(line))
+    }
+    expect(resolveFoldWidgetHeightBefore(index, 1)).toBe(5)
+    expect(resolveFoldWidgetHeightBefore(index, 2)).toBe(5)
+    expect(resolveFoldWidgetHeightBefore(index, 3)).toBe(15)
+    expect(resolveFoldWidgetHeightBefore(index, 9)).toBe(59)
+    expect(resolveFoldWidgetHeightBefore(index, Number.NaN)).toBe(0)
+  })
+
+  it('returns zero without widgets', () => {
+    const index = buildFoldWidgetHeightIndex([])
+
+    expect(resolveFoldWidgetHeightBefore(index, 1)).toBe(0)
+    expect(resolveFoldWidgetHeightBefore(index, 500)).toBe(0)
+  })
+})
+
+describe('code folding line offsets', () => {
+  it('matches the raw text helper for LF and CRLF documents', () => {
+    for (const value of [
+      'const a = 1\nfunction f() {\n  return a\n}\n',
+      'one\r\ntwo\r\n\r\nfour',
+      'single line',
+      '',
+      '\n\n'
+    ]) {
+      const helper = getRawTextHelper(value)
+      const starts = buildFoldLineStarts(value)
+      const lineCount = value.split('\n').length
+
+      expect(starts).toHaveLength(lineCount)
+      for (let line = 1; line <= lineCount; line++) {
+        expect(starts[line - 1]).toBe(helper.lineStart({ line, character: 0 }))
+        expect(resolveFoldLineEnd(value, starts[line - 1]))
+          .toBe(helper.lineEnd({ line, character: 0 }))
+        expect(starts[line - 1] + 3).toBe(helper.resolvePosition({ line, character: 3 }).offset)
+      }
+    }
+  })
+})
 
 describe('code folding ranges', () => {
   it('maps pointer positions onto folded suffix source offsets', () => {

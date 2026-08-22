@@ -10,18 +10,18 @@ import {
   normalizeDecorations, normalizeInlineReplacementDecorations
 } from './decorationNormalizer'
 import { createDocumentLines } from './documentLines'
-import { createLatestRenderController } from './latestRenderController'
 import { rangeHighlightDecorations } from './highlightNormalizer'
+import { createLatestRenderController } from './latestRenderController'
 import { createLessDomRenderer } from './lessDomRenderer'
 import {
   applyOutputPresentation, createOutputPresentation,
   createOutputRenderDependencies
 } from './outputOptions'
 import { createOutputView } from './outputView'
-import { canVirtualizeAllDom, resolveRenderMode } from './renderMode'
 import type { RenderInput, RenderOutput } from './renderMode'
-import { createWorkerIncrementalHighlighter } from './workerIncrementalHighlighter'
+import { canVirtualizeAllDom, needsHtmlProjection, resolveRenderMode } from './renderMode'
 import { resolveVirtualLineRange } from './virtualViewport'
+import { createWorkerIncrementalHighlighter } from './workerIncrementalHighlighter'
 
 export {
   normalizeDecorations, normalizeInlineReplacementDecorations
@@ -59,6 +59,31 @@ export function outputRenderControlled(
     target, input, output, syncCurrentLineHighlight
   )
   let committedRenderVersion = 0
+  // Viewport geometry is sampled on scroll/resize instead of inside the
+  // render pass, where reading it would flush pending projection writes.
+  let viewportSample: { clientHeight: number; lineHeight: number; scrollTop: number } | undefined
+  const sampleViewport = () => {
+    viewportSample = {
+      clientHeight: input.clientHeight,
+      lineHeight: Number.parseFloat(getComputedStyle(input).lineHeight) || 0,
+      scrollTop: input.scrollTop
+    }
+  }
+  const viewportObserver = typeof ResizeObserver === 'undefined'
+    ? undefined
+    : new ResizeObserver(sampleViewport)
+  viewportObserver?.observe(input)
+  input.addEventListener('scroll', sampleViewport, { passive: true })
+  const viewportLineEnd = (lineCount: number) => {
+    if (!viewportSample) {
+      sampleViewport()
+      return resolveVirtualLineRange(input, lineCount).end
+    }
+    const lineHeight = viewportSample.lineHeight || 22
+    const firstVisible = Math.max(0, Math.floor(viewportSample.scrollTop / lineHeight))
+    const visibleLines = Math.max(1, Math.ceil(viewportSample.clientHeight / lineHeight))
+    return Math.min(lineCount, firstVisible + visibleLines + 7)
+  }
   const outputPresentation = createOutputPresentation(optionsRef)
   scopeWatch(get => {
     const presentation = get(outputPresentation)
@@ -109,10 +134,7 @@ export function outputRenderControlled(
         highlights,
         inlineReplacements
       } = renderInput
-      const viewportLines = resolveVirtualLineRange(
-        input,
-        document.lineCount
-      ).end
+      const viewportLines = viewportLineEnd(document.lineCount)
       if (resolveRenderMode(target, input, renderInput) === 'less-dom') {
         const snapshot = await highlighter.tokenize(
           value,
@@ -127,7 +149,10 @@ export function outputRenderControlled(
         )
         return snapshot ? { kind: 'less-dom', value: snapshot } : undefined
       }
-      if (canVirtualizeAllDom(renderInput)) {
+      if (!needsHtmlProjection(renderInput)) {
+        // Plugins that own line DOM still receive complete line elements, but
+        // the token snapshot lets the renderer patch only changed lines
+        // instead of serializing and re-parsing the whole document.
         const snapshot = await highlighter.tokenize(
           value,
           theme,
@@ -224,5 +249,7 @@ export function outputRenderControlled(
     allDomRenderer.dispose()
     highlighter.dispose()
     lessDomRenderer.dispose()
+    viewportObserver?.disconnect()
+    input.removeEventListener('scroll', sampleViewport)
   }
 }

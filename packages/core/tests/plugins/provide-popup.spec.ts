@@ -24,8 +24,15 @@ class FakeElement {
   parentElement?: FakeElement
 
   get classList() {
+    const names = () => this.className.split(/\s+/).filter(Boolean)
     return {
-      contains: (className: string) => this.className.split(/\s+/).includes(className)
+      add: (...classNames: string[]) => {
+        this.className = [...new Set([...names(), ...classNames])].join(' ')
+      },
+      contains: (className: string) => names().includes(className),
+      remove: (...classNames: string[]) => {
+        this.className = names().filter(name => !classNames.includes(name)).join(' ')
+      }
     }
   }
 

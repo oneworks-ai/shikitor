@@ -1,3 +1,4 @@
+import type { DiffOriginalLines } from './syntax'
 import type {
   ShikitorDiffHunk,
   ShikitorDiffHunkActionLabels,
@@ -74,10 +75,9 @@ export function createHunkActions(
 
 export function cloneDiffLine(
   row: ShikitorDiffRow,
-  oldLines: readonly HTMLElement[]
+  oldLines: DiffOriginalLines
 ) {
-  const source = row.oldLine ? oldLines[row.oldLine - 1] : undefined
-  const line = source?.cloneNode(true) as HTMLElement | undefined
+  const line = (row.oldLine ? oldLines.clone(row.oldLine) : undefined)
     ?? createPlainLine(row.oldText ?? '')
   line.removeAttribute('data-line')
   if (row.oldInline.length) {

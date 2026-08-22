@@ -1,7 +1,11 @@
-import { cssvar } from '../../base'
 import { isMultipleKey, isWhatBrowser } from '../../utils' with {
   'unbundled-reexport': 'on'
 }
+import {
+  readVisualScrollLeft,
+  SCROLL_FOLLOWER_CLASS,
+  setProjectionScroll
+} from './projectionScroll'
 
 export function resolveVisualScrollLeft(
   inputScrollLeft: number,
@@ -96,21 +100,11 @@ export function initDom(mount: HTMLElement) {
     defer(() => {
       const scrollLeft = resolveVisualScrollLeft(
         input.scrollLeft,
-        target.style.getPropertyValue(cssvar('visual-scroll-l'))
+        String(readVisualScrollLeft(target) ?? '')
       )
-      target.style.setProperty(cssvar('scroll-t'), `${input.scrollTop}px`)
-      target.style.setProperty(cssvar('scroll-l'), `${scrollLeft}px`)
-      target.style.setProperty(
-        cssvar('offset-x'),
-        'calc(-1 * var(--shikitor-scroll-l, 0px))'
-      )
-      target.style.setProperty(
-        cssvar('offset-y'),
-        'calc(-1 * var(--shikitor-scroll-t, 0px))'
-      )
-      output.scrollTop = input.scrollTop
-      output.scrollLeft = scrollLeft
-      lines.style.marginTop = `-${input.scrollTop}px`
+      const scrollTop = input.scrollTop
+      setProjectionScroll(target, output, { left: scrollLeft, top: scrollTop })
+      lines.style.marginTop = `-${scrollTop}px`
     })
   }
   input.addEventListener('scroll', onScroll)
@@ -144,7 +138,7 @@ export function initDom(mount: HTMLElement) {
   placeholder.classList.add('shikitor-placeholder')
 
   const cursors = document.createElement('div')
-  cursors.classList.add('shikitor-cursors')
+  cursors.classList.add('shikitor-cursors', SCROLL_FOLLOWER_CLASS)
   const defaultCursor = document.createElement('div')
   defaultCursor.classList.add('shikitor-cursor')
   const userName = document.createElement('div')

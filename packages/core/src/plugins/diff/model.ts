@@ -131,3 +131,84 @@ export function computeDiffModel(
   }
 }
 
+/**
+ * Locate a single-line replacement between two texts: the same number of
+ * lines, exactly one of them different. Returns the one-based line, or
+ * undefined for any other kind of change.
+ */
+export function findSingleLineEdit(previous: string, next: string): number | undefined {
+  if (previous === next) return undefined
+  let prefix = 0
+  const limit = Math.min(previous.length, next.length)
+  while (prefix < limit && previous.charCodeAt(prefix) === next.charCodeAt(prefix)) prefix++
+  let suffix = 0
+  while (
+    suffix < limit - prefix
+    && previous.charCodeAt(previous.length - 1 - suffix) === next.charCodeAt(next.length - 1 - suffix)
+  ) suffix++
+  const previousMiddle = previous.slice(prefix, previous.length - suffix)
+  const nextMiddle = next.slice(prefix, next.length - suffix)
+  if (previousMiddle.includes('\n') || nextMiddle.includes('\n')) return undefined
+  let line = 1
+  for (let index = 0; index < prefix; index++) {
+    if (previous.charCodeAt(index) === 10) line++
+  }
+  return line
+}
+
+/**
+ * Update a diff model for an edit confined to one current-side line that is
+ * already part of a change (an added or modified row). The row structure,
+ * hunk boundaries and statistics are unchanged, so only that row's text and
+ * inline ranges are recomputed; the result is what a full recomputation
+ * would produce for this case. Returns undefined when the edit touches a
+ * context line or spans lines, in which case the full diff must run.
+ */
+export function updateDiffModelForLineEdit(
+  previous: ShikitorDiffModel,
+  current: string,
+  options: ShikitorDiffComputeOptions = {}
+): ShikitorDiffModel | undefined {
+  if (previous.truncated) return undefined
+  const line = findSingleLineEdit(previous.current, current)
+  if (line === undefined) return undefined
+  const rowIndex = previous.rows.findIndex(row => row.newLine === line)
+  const row = previous.rows[rowIndex]
+  if (!row || row.hunkId === undefined || (row.kind !== 'added' && row.kind !== 'modified')) {
+    return undefined
+  }
+  const hunkIndex = previous.hunks.findIndex(hunk => hunk.id === row.hunkId)
+  const hunk = previous.hunks[hunkIndex]
+  if (!hunk) return undefined
+  const newText = splitDiffLines(current)[line - 1]
+  if (newText === undefined) return undefined
+  // An edit that makes the line equal to baseline text can only be resolved
+  // by the full diff: restoring a modified row dissolves the change, and a
+  // line that now matches a removed or neighbouring context line would be
+  // paired differently. Keeping the row would show a phantom change.
+  if (hunk.oldLines.includes(newText)) return undefined
+  const before = previous.rows[previous.rows.indexOf(hunk.rows[0]) - 1]
+  const after = previous.rows[previous.rows.indexOf(hunk.rows[hunk.rows.length - 1]) + 1]
+  if (before?.oldText === newText || after?.oldText === newText) return undefined
+  const inline = row.kind === 'modified'
+    ? computeInlineDiff(row.oldText ?? '', newText, options.inline ?? 'word')
+    : { oldRanges: [], newRanges: [{ start: 0, end: newText.length }] }
+  const nextRow: ShikitorDiffRow = {
+    ...row,
+    newText,
+    oldInline: inline.oldRanges,
+    newInline: inline.newRanges
+  }
+  const rows = previous.rows.slice()
+  rows[rowIndex] = nextRow
+  const hunkRowIndex = hunk.rows.indexOf(row)
+  if (hunkRowIndex < 0) return undefined
+  const hunkRows = hunk.rows.slice()
+  hunkRows[hunkRowIndex] = nextRow
+  const newLines = hunk.newLines.slice()
+  newLines[line - hunk.newStart] = newText
+  const nextHunk: ShikitorDiffHunk = { ...hunk, newLines, rows: hunkRows }
+  const hunks = previous.hunks.slice()
+  hunks[hunkIndex] = nextHunk
+  return { ...previous, current, hunks, rows }
+}

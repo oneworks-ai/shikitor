@@ -60,8 +60,14 @@ both container-created and host-owned inputs.
   Neither creates per-token or per-line elements.
 - `all-dom` uses ordinary token elements for every visible line, with an
   overscanned viewport instead of a document-sized token tree. Features that
-  own projected line DOM (plugins, decorations, and inline replacements) keep
-  the complete compatibility projection until they support virtual islands.
+  own projected line DOM keep a complete line projection until they support
+  virtual islands: plugins receive one element per source line, but only
+  the lines around the scrolled viewport carry token content (the rest are
+  one-line placeholders marked `data-shikitor-virtual`), and edits patch
+  lines incrementally from the shared token snapshot (only changed lines are
+  replaced, the gutter keeps its elements). Decorations, exact-range
+  highlights and inline replacements still use Shiki's serialized HTML
+  renderer.
 
 The effective strategy is published as `data-shikitor-render-mode` on the `.shikitor`
 root. Requesting `less-dom` is capability-safe: unsupported browsers use
@@ -241,3 +247,10 @@ Set `collapseUnchanged` to `true` or provide `{ context, minimum, label }` to
 replace long unchanged ranges with an expandable context row. The textarea
 still retains the complete working-copy source, while pointer, keyboard,
 selection, and scroll geometry follow the folded visual document.
+
+The baseline is tokenized with the same shared Shiki engine as the working
+copy. Each keystroke re-diffs the two sources, but the view only touches the
+line elements whose diff decoration changed, and the split-view original
+column renders the rows inside the scrolled viewport instead of the complete
+baseline. See `docs/rfcs/0002-diff-rendering-performance.md` for the
+measurements behind this design.

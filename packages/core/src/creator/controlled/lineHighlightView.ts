@@ -130,6 +130,11 @@ export function createLineHighlightView({
   function render() {
     frame = 0
     clearDecoratedLines()
+    if (!highlights.length) {
+      // Measuring every line forces layout; skip it when nothing is painted.
+      if (layer.childElementCount) layer.replaceChildren()
+      return
+    }
     const gutterLines = domLines(lines, '.shikitor-gutter-line[data-line]')
     const outputLines = domLines(output, '.shikitor-output-line[data-line]')
     if (outputLines.length) {
