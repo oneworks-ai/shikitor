@@ -25,6 +25,7 @@ export {
   LINE_PATCH_EVENT,
   VIRTUAL_LINE_ATTRIBUTE
 } from './creator/controlled/allDomRenderer'
+export { setCursorGeometry } from './creator/controlled/cursorGeometry'
 export type { DocumentLines } from './creator/controlled/documentLines'
 export { createDocumentLines } from './creator/controlled/documentLines'
 export { createIncrementalHighlighter } from './creator/controlled/incrementalHighlighter'

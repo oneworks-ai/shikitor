@@ -133,10 +133,29 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
   let rendered: RenderedLine[] = []
   const materialized = new Set<number>()
   let lastMinWidth = ''
+  let windowDirty = true
+  let lastCodeHeight = -1
+  let visibleDirty = true
+  let visible: number[] = []
   let onLayout: (() => void) | undefined
   const codeObserver = typeof ResizeObserver === 'undefined'
     ? undefined
-    : new ResizeObserver(() => onLayout?.())
+    : new ResizeObserver(entries => {
+        // Only height changes (folds, widgets) move lines; width changes do not.
+        const height = entries[entries.length - 1]?.contentRect.height ?? -1
+        if (height === lastCodeHeight) return
+        lastCodeHeight = height
+        windowDirty = true
+        onLayout?.()
+      })
+  // Hidden-state changes (code folding) alter which lines are visible.
+  const hiddenObserver = typeof MutationObserver === 'undefined'
+    ? undefined
+    : new MutationObserver(() => {
+        visibleDirty = true
+        windowDirty = true
+        onLayout?.()
+      })
 
   function ensureStructure() {
     if (code && output.dataset.renderKind === 'tokens-full' && code.isConnected) return code
@@ -150,7 +169,11 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
     rendered = []
     materialized.clear()
     lastMinWidth = ''
+    lastCodeHeight = -1
+    visibleDirty = true
     codeObserver?.observe(code)
+    hiddenObserver?.disconnect()
+    hiddenObserver?.observe(code, { attributeFilter: ['hidden'], attributes: true, subtree: true })
     return code
   }
 
@@ -181,6 +204,7 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
     current.element.setAttribute(VIRTUAL_LINE_ATTRIBUTE, '')
     current.materialized = false
     materialized.delete(index)
+    announce(index)
   }
 
   function createLine(index: number, line: TokenizedLine, withContent: boolean) {
@@ -237,13 +261,20 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
   return {
     clear() {
       codeObserver?.disconnect()
+      hiddenObserver?.disconnect()
       code = undefined
       rendered = []
       materialized.clear()
       lastMinWidth = ''
+      windowDirty = true
+      visibleDirty = true
+    },
+    markWindowDirty() {
+      windowDirty = true
     },
     dispose() {
       codeObserver?.disconnect()
+      hiddenObserver?.disconnect()
       onLayout = undefined
     },
     get lineCount() {
@@ -268,10 +299,14 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
       const reusable = Math.min(removeCount, insertCount)
       // Changed lines that keep their slot are replaced in place and keep
       // the slot's materialization; the window pass corrects the rest.
+      // Changed lines that keep their slot are patched in place: the element,
+      // its attributes and its position survive, so plugins see a content
+      // change (LINE_PATCH_EVENT) instead of a line-structure mutation.
       for (let index = 0; index < reusable; index++) {
         const slot = prefix + index
-        replaceLine(slot, desiredLine(document, snapshot, slot), rendered[slot].materialized)
+        patchLine(slot, desiredLine(document, snapshot, slot))
       }
+      if (removeCount !== insertCount) visibleDirty = true
       if (removeCount > reusable) {
         const removed = rendered.splice(prefix + reusable, removeCount - reusable)
         for (const entry of removed) entry.element.remove()
@@ -303,6 +338,7 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
       }
       // Shifted tail lines keep their DOM and only take the new line number.
       if (insertCount !== removeCount) {
+        windowDirty = true
         for (let index = prefix + insertCount; index < nextCount; index++) {
           rendered[index].element.dataset.line = String(index + 1)
         }
@@ -331,9 +367,14 @@ function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElemen
      */
     updateWindow(force = false) {
       if (!code || !rendered.length) return
-      const visible: number[] = []
-      for (let index = 0; index < rendered.length; index++) {
-        if (!rendered[index].element.hidden) visible.push(index)
+      if (!windowDirty && !force) return
+      windowDirty = false
+      if (visibleDirty) {
+        visibleDirty = false
+        visible = []
+        for (let index = 0; index < rendered.length; index++) {
+          if (!rendered[index].element.hidden) visible.push(index)
+        }
       }
       const wanted = new Set<number>()
       if (visible.length) {
@@ -390,6 +431,7 @@ export function createAllDomRenderer(
 
   function scheduleWindow() {
     if (!active || virtual) return
+    projection.markWindowDirty()
     cancelAnimationFrame(windowFrame)
     windowFrame = requestAnimationFrame(() => {
       windowFrame = 0
@@ -456,8 +498,9 @@ export function createAllDomRenderer(
       })
       output.dataset.renderState = 'highlighted'
       output.dataset.syntaxState = next.complete ? 'complete' : 'viewport'
-      output.style.removeProperty('color')
-      output.style.removeProperty('background-color')
+      // `color` inherits; only clear the plaintext fallback when it is set.
+      if (output.style.color) output.style.removeProperty('color')
+      if (output.style.backgroundColor) output.style.removeProperty('background-color')
     },
     dispose() {
       active = false
@@ -483,11 +526,17 @@ export function createAllDomRenderer(
         projection.updateWindow()
         onRender()
       }
+      const highlighted = output.dataset.renderState === 'highlighted'
       output.dataset.renderState = 'plaintext'
       output.dataset.syntaxState = 'pending'
-      const isDark = darkThemes.has(theme)
-      output.style.color = isDark ? '#c9d1d9' : '#24292f'
-      output.style.backgroundColor = isDark ? '#0d1117' : '#ffffff'
+      // The plaintext fallback colors only matter before the first themed
+      // commit; afterwards the projection inherits the applied theme, and
+      // rewriting an inherited color would restyle every line per keystroke.
+      if (!highlighted || virtual) {
+        const isDark = darkThemes.has(theme)
+        output.style.color = isDark ? '#c9d1d9' : '#24292f'
+        output.style.backgroundColor = isDark ? '#0d1117' : '#ffffff'
+      }
     },
     leave() {
       active = false

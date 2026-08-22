@@ -1,6 +1,6 @@
 import './line-widgets.scss'
 
-import { definePlugin } from '@shikitor/core'
+import { definePlugin, setCursorGeometry } from '@shikitor/core'
 
 import { installCursorGeometryLayer } from './cursor-geometry-layer'
 
@@ -58,6 +58,26 @@ export function createLineWidgetGeometry(
     heightPrefix[index + 1] = heightPrefix[index] + sorted[index].height
   }
   return { afterLines, heightPrefix }
+}
+
+/** Whether the configured widgets map one-to-one onto the mounted regions. */
+export function sameLineWidgetLayout(
+  widgets: readonly Pick<LineWidget, 'id' | 'afterLine' | 'className' | 'minHeight'>[],
+  mounted: readonly { afterLine: number; className: string; id: string; minHeight?: number }[]
+) {
+  if (widgets.length !== mounted.length) return false
+  for (let index = 0; index < widgets.length; index++) {
+    const widget = widgets[index]
+    const entry = mounted[index]
+    const className = `shikitor-line-widget${widget.className ? ` ${widget.className}` : ''}`
+    if (
+      widget.id !== entry.id
+      || widget.afterLine !== entry.afterLine
+      || className !== entry.className
+      || widget.minHeight !== entry.minHeight
+    ) return false
+  }
+  return true
 }
 
 export function totalLineWidgetHeight(geometry: LineWidgetGeometry) {
@@ -143,6 +163,8 @@ export default definePlugin({
     let renderFrame: number | undefined
     let widgetDisposers: Array<() => void> = []
     let mounted: MountedLineWidget[] = []
+    // Whether line elements were added or removed since the last full pass.
+    let structureDirty = true
     let geometry: LineWidgetGeometry = EMPTY_LINE_WIDGET_GEOMETRY
     let gutterWidth: number | undefined
     let rendering = false
@@ -166,8 +188,7 @@ export default definePlugin({
     )
 
     function applyCursorPosition(position: { x: number; y: number }) {
-      target.style.setProperty('--shikitor-cursor-t', `${position.y}px`)
-      target.style.setProperty('--shikitor-cursor-l', `${position.x}px`)
+      setCursorGeometry(target, position)
     }
 
     function renderCursor() {
@@ -381,6 +402,20 @@ export default definePlugin({
         const widgets = [...(configuredWidgets ?? [])]
           .filter(widget => Number.isInteger(widget.afterLine) && widget.afterLine >= 0)
           .sort((a, b) => a.afterLine - b.afterLine)
+        if (!structureDirty && sameLineWidgetLayout(widgets, mounted)) {
+          // Same widgets at the same anchors and the line DOM did not change:
+          // regions and spacers stay where they are, only the widget
+          // contents are refreshed (widget render callbacks are expected to
+          // be cheap when nothing changed). Height changes reach the shared
+          // ResizeObserver.
+          widgetDisposers.forEach(dispose => dispose())
+          widgetDisposers = []
+          for (let index = 0; index < widgets.length; index++) {
+            const dispose = widgets[index].render(mounted[index].region)
+            if (dispose) widgetDisposers.push(dispose)
+          }
+          return
+        }
         // Regions are created with the gutter width already applied so their
         // first measurement reflects the final width. Later passes reuse the
         // cached value; `syncGeometry` re-applies it if it changed meanwhile.
@@ -489,12 +524,12 @@ export default definePlugin({
         if (regionObserver) {
           for (const entry of mounted) regionObserver.observe(entry.region)
         }
+        structureDirty = false
       } finally {
         rendering = false
+        observer.observe(output, { childList: true, subtree: true })
+        observer.observe(gutters, { childList: true, subtree: true })
       }
-
-      observer.observe(output, { childList: true, subtree: true })
-      observer.observe(gutters, { childList: true, subtree: true })
     }
 
     function scheduleRender() {
@@ -512,7 +547,9 @@ export default definePlugin({
       ))
     ))
     const observer = new MutationObserver(records => {
-      if (hasLineStructureMutation(records)) scheduleRender()
+      if (!hasLineStructureMutation(records)) return
+      structureDirty = true
+      scheduleRender()
     })
     let pointerAnchor: number | undefined
     let mappedPointerSelection: { anchor: number; focus: number } | undefined

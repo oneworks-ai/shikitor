@@ -1,6 +1,6 @@
 import './code-folding.scss'
 
-import { definePlugin, LINE_PATCH_EVENT, VIRTUAL_LINE_ATTRIBUTE } from '@shikitor/core'
+import { definePlugin, LINE_PATCH_EVENT, setCursorGeometry, VIRTUAL_LINE_ATTRIBUTE } from '@shikitor/core'
 
 import { insertGutterDecorationSlot } from './_internal/gutter-decoration-slot'
 import { installCursorGeometryLayer } from './cursor-geometry-layer'
@@ -586,6 +586,23 @@ function cloneLineSuffix(line: HTMLElement, startColumn: number) {
   }
 }
 
+/**
+ * Cheap identity of everything a fold pass depends on besides the line DOM
+ * itself; an unchanged signature with no line-structure change since the
+ * previous pass means the pass can be skipped.
+ */
+export function foldRenderSignature(
+  ranges: readonly Pick<FoldRange, 'startLine' | 'endLine' | 'kind' | 'label' | 'presentation' | 'close' | 'closeColumn' | 'suffixLine' | 'suffixColumn'>[],
+  collapsed: ReadonlySet<number>,
+  lineCount: number
+) {
+  let signature = `${lineCount}|${collapsed.size}|`
+  for (const range of ranges) {
+    signature += `${range.startLine}:${range.endLine}:${range.kind}:${range.presentation ?? ''}:${range.label ?? ''}:${range.close ?? ''}:${range.closeColumn ?? ''}:${range.suffixLine ?? ''}:${range.suffixColumn ?? ''}:${collapsed.has(range.startLine) ? 1 : 0};`
+  }
+  return signature
+}
+
 export default definePlugin({
   name: 'code-folding',
   inject: ['shikitor'],
@@ -608,6 +625,10 @@ export default definePlugin({
     let renderFrame: number | undefined
     let postRenderScrollFrame: number | undefined
     let renderPending = true
+    // Whether line elements were added or removed since the last full pass;
+    // together with foldRenderSignature it decides if a pass can be skipped.
+    let structureDirty = true
+    let lastRenderSignature = ''
     let visualMaxScrollTop = 0
     let visualMaxScrollLeft = 0
     let visualScrollLeft = 0
@@ -1155,6 +1176,16 @@ export default definePlugin({
         cancelAnimationFrame(postRenderScrollFrame)
         postRenderScrollFrame = undefined
       }
+      const signature = foldRenderSignature(ranges, collapsed, currentLineCount())
+      if (!structureDirty && signature === lastRenderSignature) {
+        // Nothing that the fold DOM depends on changed (typical keystroke):
+        // keep the DOM, only refresh the cheap overlays.
+        renderPending = false
+        target.classList.remove('shikitor--fold-rendering')
+        renderSelection()
+        setCursorGeometry(target, shikitor._getCursorAbsolutePosition(shikitor.cursor, -1))
+        return
+      }
       const preservedScrollLeft = visualScrollLeft
       // Geometry measured before this pass describes the previous DOM; it is
       // re-measured lazily after the writes below.
@@ -1403,6 +1434,8 @@ export default definePlugin({
       observer.observe(output, { childList: true, subtree: true })
       observer.observe(gutters, { childList: true, subtree: true })
       renderPending = false
+      structureDirty = false
+      lastRenderSignature = signature
       target.classList.remove('shikitor--fold-rendering')
       // Replacing fold placeholders changes the output's intrinsic width.
       // Browsers can expose the temporary viewport width until the next
@@ -1414,8 +1447,7 @@ export default definePlugin({
         syncVisualScroll(input.scrollTop, preservedScrollLeft)
       })
       renderSelection()
-      target.style.setProperty('--shikitor-cursor-t', `${cursorPosition.y}px`)
-      target.style.setProperty('--shikitor-cursor-l', `${cursorPosition.x}px`)
+      setCursorGeometry(target, cursorPosition)
     }
 
     function scheduleRender() {
@@ -1453,21 +1485,28 @@ export default definePlugin({
       ))
     ))
     const observer = new MutationObserver(records => {
-      if (hasLineStructureMutation(records)) scheduleRender()
+      if (!hasLineStructureMutation(records)) return
+      structureDirty = true
+      scheduleRender()
     })
     // A line whose children were re-rendered in place (same source, new
-    // tokens) lost any placeholder, suffix or content wrapper it carried, and
-    // a collapsed range's suffix clone may describe it; re-render in that case.
+    // tokens, or materialized content) lost any placeholder, suffix or
+    // content wrapper it carried, and a collapsed range's suffix clone may
+    // describe it; re-render in that case. Lines that just became
+    // placeholders are off-screen and are decorated again when they return.
     const onLinePatch = (event: Event) => {
       const element = event.target
       if (!(element instanceof HTMLElement)) return
+      if (element.hasAttribute(VIRTUAL_LINE_ATTRIBUTE)) return
       const line = Number(element.dataset.line)
       if (!Number.isInteger(line)) return
       const affected = ranges.some(range => (
         range.startLine === line
         || (collapsed.has(range.startLine) && (range.suffixLine ?? range.endLine) === line)
       ))
-      if (affected) scheduleRender()
+      if (!affected) return
+      structureDirty = true
+      scheduleRender()
     }
     output.addEventListener(LINE_PATCH_EVENT, onLinePatch)
     const onClick = (event: Event) => {

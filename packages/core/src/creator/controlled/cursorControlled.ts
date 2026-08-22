@@ -2,9 +2,9 @@ import { derive } from 'valtio/utils'
 import { subscribe } from 'valtio/vanilla'
 
 import type { RefObject } from '../../base'
-import { cssvar } from '../../base'
 import type { Cursor, ResolvedCursor, Shikitor } from '../../editor'
 import type { RawTextHelper } from '../../utils/getRawTextHelper'
+import { setCursorGeometry } from './cursorGeometry'
 
 export function cursorControlled(
   getShikitor: () => Shikitor | undefined,
@@ -35,14 +35,10 @@ export function cursorControlled(
     geometryFrame = 0
     const shikitor = getShikitor()
     const cursor = cursorRef.current
-    let [top, left] = ['0px', '0px']
-    if (shikitor) {
-      const pos = shikitor._getCursorAbsolutePosition(cursor, -1)
-      top = `${pos.y}px`
-      left = `${pos.x}px`
-    }
-    target.style.setProperty(cssvar('cursor-t'), top)
-    target.style.setProperty(cssvar('cursor-l'), left)
+    setCursorGeometry(
+      target,
+      shikitor ? shikitor._getCursorAbsolutePosition(cursor, -1) : { x: 0, y: 0 }
+    )
   }
   const scheduleCursorGeometry = () => {
     if (geometryFrame || typeof requestAnimationFrame === 'undefined') {
