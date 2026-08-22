@@ -201,8 +201,9 @@ whenever the line container's size changes (one `ResizeObserver`).
 Materializing a line dispatches `LINE_PATCH_EVENT`, so the diff view re-keys
 that line and code folding re-renders when the line carries fold DOM; lines
 leaving the window drop back to placeholders. Element count becomes
-O(lines + window × tokens): 6.9 k instead of 26.9 k at 1,000 lines, and the
-remaining style and layout work no longer grows with the document.
+O(lines + window × tokens) — 6.9 k instead of 26.9 k at 1,000 lines — so the
+per-line skeleton still grows with the document while token DOM does not,
+and the remaining style and layout work no longer grows with the document.
 
 Edited lines are patched in place as well (element, attributes and
 position survive; plugins receive `LINE_PATCH_EVENT`), so a keystroke is a
@@ -401,8 +402,11 @@ one text node and `<br>` per line.
   fold indexes.
 - Benchmark edit P50 for the 1,000-line diff improves by more than an order
   of magnitude against the baseline above on the same machine (achieved:
-  one frame), and DOM count no longer scales with the document length while
-  the viewport is stationary (token DOM is bounded by the viewport window).
+  one frame). Token DOM is bounded by the viewport window; the per-line
+  skeleton (one placeholder element per line plus its gutter line) still
+  grows linearly with the document, which is what the 1,000- and 5,000-line
+  element counts above show, because layout-changing plugins anchor to one
+  element per line.
 
 ## Risks and mitigations
 
