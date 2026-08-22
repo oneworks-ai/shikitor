@@ -1,0 +1,1 @@
+import"./index-DH-3xqSB.js";import{d as t}from"./plugin-DeQo96Nv.js";const s=t({name:"provide-pointer",inject:["shikitor"],apply(e){const r=e.shikitor.input;e.provide("shikitorPointer",{platform:r.platform,subscribe:i=>r.pointer.subscribe(i),registerAction:i=>r.registerAction(i),registerBinding:i=>r.registerBinding(i),registerBindings:i=>r.registerBindings(i)})}});export{s as p};

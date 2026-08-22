@@ -1,0 +1,1 @@
+import{r as t,j as i}from"./index-mxYnnJSI.js";import{n as s}from"./index-DH-3xqSB.js";import{W as a}from"./useShikitorCreate-Dzv-TURH.js";t.forwardRef(function(r,o){return i.jsx(a,{...r,create:s,ref:o})});

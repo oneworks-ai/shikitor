@@ -1,0 +1,1 @@
+function l(o,n){const e=o._getCursorAbsolutePosition.bind(o);let s=!0;const t=(r,u=0)=>s?n(e,r,u):e(r,u);return o._getCursorAbsolutePosition=t,{previous:e,resolve:t,dispose(){s=!1,o._getCursorAbsolutePosition===t&&(o._getCursorAbsolutePosition=e)}}}export{l as i};
