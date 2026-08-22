@@ -4,9 +4,12 @@ import { bundledThemesInfo } from 'shiki'
 import { applyShikitorTheme } from '../structureTransfomer'
 import type { DocumentLines } from './documentLines'
 import { resolveLinePatch, tokenizedLinesEquivalent } from './linePatch'
+import { MATERIALIZATION_OVERSCAN_LINES, resolveMaterializationWindow } from './materialization'
 import type { TokenizedLine,TokenSnapshot } from './tokenSnapshot'
 import { tokenizedLineAt } from './tokenSnapshot'
 import { resolveVirtualLineRange } from './virtualViewport'
+
+const DEFAULT_LINE_HEIGHT = 22
 
 const darkThemes = new Set(bundledThemesInfo
   .filter(({ type }) => type === 'dark')
@@ -98,21 +101,46 @@ function createStructure(output: HTMLElement) {
 interface RenderedLine {
   element: HTMLElement
   line?: TokenizedLine
+  /** Whether the element carries real content or a one-line placeholder. */
+  materialized: boolean
   source: string
+}
+
+/** Marks a line element whose content is not materialized. */
+export const VIRTUAL_LINE_ATTRIBUTE = 'data-shikitor-virtual'
+
+function createPlaceholderLine(index: number) {
+  const element = document.createElement('span')
+  element.className = 'line shikitor-output-line'
+  element.dataset.line = String(index + 1)
+  element.setAttribute(VIRTUAL_LINE_ATTRIBUTE, '')
+  element.append(document.createTextNode(' '))
+  return element
 }
 
 /**
  * Complete line projection for editors whose plugins own line DOM. Every
- * source line keeps one `.shikitor-output-line` element, but edits only
- * replace the lines whose source or paint changed; unchanged elements keep
- * their identity so plugin decorations and observers see minimal churn.
+ * source line keeps one `.shikitor-output-line` element so plugins can
+ * anchor widgets, hide ranges and decorate by line number, but only the
+ * lines around the scrolled viewport carry token content; the rest are
+ * one-line placeholders. Edits replace only the lines whose source changed,
+ * token updates touch only materialized lines whose paint changed, and the
+ * materialized window follows the flow layout (hidden lines and block
+ * widgets included) measured from the elements themselves.
  */
-function createFullLineProjection(output: HTMLElement) {
+function createFullLineProjection(output: HTMLElement, input: HTMLTextAreaElement) {
   let code: HTMLElement | undefined
   let rendered: RenderedLine[] = []
+  const materialized = new Set<number>()
+  let lastMinWidth = ''
+  let onLayout: (() => void) | undefined
+  const codeObserver = typeof ResizeObserver === 'undefined'
+    ? undefined
+    : new ResizeObserver(() => onLayout?.())
 
   function ensureStructure() {
     if (code && output.dataset.renderKind === 'tokens-full' && code.isConnected) return code
+    codeObserver?.disconnect()
     const pre = document.createElement('pre')
     code = document.createElement('code')
     code.className = 'shiki shikitor-output-lines'
@@ -120,32 +148,73 @@ function createFullLineProjection(output: HTMLElement) {
     output.replaceChildren(pre)
     output.dataset.renderKind = 'tokens-full'
     rendered = []
+    materialized.clear()
+    lastMinWidth = ''
+    codeObserver?.observe(code)
     return code
   }
 
-  function replaceLine(index: number, line: TokenizedLine) {
-    const element = createTokenLine(line, index)
+  function contentFor(index: number): TokenizedLine {
+    const current = rendered[index]
+    return current.line ?? plainLine(current.source)
+  }
+
+  function announce(index: number) {
+    rendered[index].element.dispatchEvent(new CustomEvent(LINE_PATCH_EVENT, {
+      bubbles: true,
+      detail: { line: index + 1 }
+    }))
+  }
+
+  function materialize(index: number) {
+    const current = rendered[index]
+    current.element.replaceChildren(...createTokenLineChildren(contentFor(index), index))
+    current.element.removeAttribute(VIRTUAL_LINE_ATTRIBUTE)
+    current.materialized = true
+    materialized.add(index)
+    announce(index)
+  }
+
+  function dematerialize(index: number) {
+    const current = rendered[index]
+    current.element.replaceChildren(document.createTextNode(' '))
+    current.element.setAttribute(VIRTUAL_LINE_ATTRIBUTE, '')
+    current.materialized = false
+    materialized.delete(index)
+  }
+
+  function createLine(index: number, line: TokenizedLine, withContent: boolean) {
+    return withContent ? createTokenLine(line, index) : createPlaceholderLine(index)
+  }
+
+  function replaceLine(index: number, line: TokenizedLine, keepMaterialized: boolean) {
+    const element = createLine(index, line, keepMaterialized)
     const previous = rendered[index]
     if (previous) previous.element.replaceWith(element)
-    rendered[index] = { element, line: line.tokenized === false ? undefined : line, source: line.source }
+    rendered[index] = {
+      element,
+      line: line.tokenized === false ? undefined : line,
+      materialized: keepMaterialized,
+      source: line.source
+    }
+    if (keepMaterialized) materialized.add(index)
+    else materialized.delete(index)
     return element
   }
 
   /**
-   * Re-render a line's children for a paint-only change (same source, new
-   * tokens). The element keeps its identity, classes and position, so line
-   * structure observers stay quiet; plugins decorating inside the line are
-   * told through LINE_PATCH_EVENT.
+   * Re-render a materialized line's children for a paint-only change (same
+   * source, new tokens). The element keeps its identity, classes and
+   * position, so line structure observers stay quiet; plugins decorating
+   * inside the line are told through LINE_PATCH_EVENT.
    */
   function patchLine(index: number, line: TokenizedLine) {
     const current = rendered[index]
-    current.element.replaceChildren(...createTokenLineChildren(line, index))
     current.line = line.tokenized === false ? undefined : line
     current.source = line.source
-    current.element.dispatchEvent(new CustomEvent(LINE_PATCH_EVENT, {
-      bubbles: true,
-      detail: { line: index + 1 }
-    }))
+    if (!current.materialized) return
+    current.element.replaceChildren(...createTokenLineChildren(line, index))
+    announce(index)
   }
 
   function desiredLine(
@@ -158,13 +227,31 @@ function createFullLineProjection(output: HTMLElement) {
     return plainLine(document.lineAt(index))
   }
 
+  function reindexMaterialized(from: number, delta: number) {
+    if (!delta) return
+    const moved = [...materialized].filter(index => index >= from)
+    for (const index of moved) materialized.delete(index)
+    for (const index of moved) materialized.add(index + delta)
+  }
+
   return {
     clear() {
+      codeObserver?.disconnect()
       code = undefined
       rendered = []
+      materialized.clear()
+      lastMinWidth = ''
+    },
+    dispose() {
+      codeObserver?.disconnect()
+      onLayout = undefined
     },
     get lineCount() {
       return rendered.length
+    },
+    /** Called when the flow layout of the projection changed size. */
+    set onLayoutChange(callback: (() => void) | undefined) {
+      onLayout = callback
     },
     /**
      * Reconcile the line elements with the document, touching only changed
@@ -179,26 +266,35 @@ function createFullLineProjection(output: HTMLElement) {
       const removeCount = previousCount - prefix - suffix
       const insertCount = nextCount - prefix - suffix
       const reusable = Math.min(removeCount, insertCount)
-      // Changed lines that keep their slot are replaced in place.
+      // Changed lines that keep their slot are replaced in place and keep
+      // the slot's materialization; the window pass corrects the rest.
       for (let index = 0; index < reusable; index++) {
-        replaceLine(prefix + index, desiredLine(document, snapshot, prefix + index))
+        const slot = prefix + index
+        replaceLine(slot, desiredLine(document, snapshot, slot), rendered[slot].materialized)
       }
       if (removeCount > reusable) {
-        for (const entry of rendered.splice(prefix + reusable, removeCount - reusable)) {
-          entry.element.remove()
-        }
+        const removed = rendered.splice(prefix + reusable, removeCount - reusable)
+        for (const entry of removed) entry.element.remove()
+        for (let index = prefix + reusable; index < prefix + removeCount; index++) materialized.delete(index)
+        reindexMaterialized(prefix + removeCount, -(removeCount - reusable))
       } else if (insertCount > reusable) {
+        const nearby = rendered[prefix + reusable - 1]?.materialized
+          || rendered[prefix + reusable]?.materialized
+          || false
+        reindexMaterialized(prefix + reusable, insertCount - reusable)
         const fragment = window.document.createDocumentFragment()
         const inserted: RenderedLine[] = []
         for (let index = prefix + reusable; index < prefix + insertCount; index++) {
           const line = desiredLine(document, snapshot, index)
-          const element = createTokenLine(line, index)
+          const element = createLine(index, line, nearby)
           fragment.append(element)
           inserted.push({
             element,
             line: line.tokenized === false ? undefined : line,
+            materialized: nearby,
             source: line.source
           })
+          if (nearby) materialized.add(index)
         }
         const anchor = rendered[prefix + reusable]?.element
         if (anchor) anchor.before(fragment)
@@ -212,7 +308,8 @@ function createFullLineProjection(output: HTMLElement) {
         }
       }
       if (!snapshot) return
-      // Upgrade plaintext lines and lines whose paint changed.
+      // Record tokens for every line; only materialized lines whose paint
+      // changed are re-rendered.
       for (let index = 0; index < nextCount; index++) {
         const line = tokenizedLineAt(snapshot, index)
         if (!line) continue
@@ -225,6 +322,48 @@ function createFullLineProjection(output: HTMLElement) {
         if (line.source !== current.source) continue
         patchLine(index, line)
       }
+    },
+    /**
+     * Materialize the lines around the scrolled viewport and release the
+     * content of lines that left it. Positions come from the flow layout,
+     * so hidden lines and block widgets inserted by plugins are respected
+     * without a private layout model.
+     */
+    updateWindow(force = false) {
+      if (!code || !rendered.length) return
+      const visible: number[] = []
+      for (let index = 0; index < rendered.length; index++) {
+        if (!rendered[index].element.hidden) visible.push(index)
+      }
+      const wanted = new Set<number>()
+      if (visible.length) {
+        const firstElement = rendered[visible[0]].element
+        // offsetTop is relative to the offset parent; the container's own
+        // offset is the content origin only when both share that parent.
+        const origin = code.offsetParent === firstElement.offsetParent ? code.offsetTop : 0
+        const lineHeight = firstElement.offsetHeight || DEFAULT_LINE_HEIGHT
+        const { first, last } = resolveMaterializationWindow(
+          visible.length,
+          row => rendered[visible[row]].element.offsetTop - origin,
+          input.scrollTop,
+          input.clientHeight,
+          MATERIALIZATION_OVERSCAN_LINES * lineHeight
+        )
+        for (let row = first; row < last; row++) wanted.add(visible[row])
+        const minWidth = `${Math.max(input.clientWidth, input.scrollWidth)}px`
+        if (minWidth !== lastMinWidth) {
+          lastMinWidth = minWidth
+          code.style.minWidth = minWidth
+        }
+        output.dataset.renderWindowStart = String(visible[first] + 1)
+        output.dataset.renderWindowEnd = String(visible[Math.max(first, last - 1)] + 1)
+      }
+      for (const index of [...materialized]) {
+        if (!wanted.has(index)) dematerialize(index)
+      }
+      for (const index of wanted) {
+        if (!rendered[index].materialized || force) materialize(index)
+      }
     }
   }
 }
@@ -235,20 +374,36 @@ export function createAllDomRenderer(
 ) {
   let frame = 0
   let sourceFrame = 0
+  let windowFrame = 0
   let active = false
   let virtual = true
   let snapshot: TokenSnapshot | undefined
   let sourceDocument: DocumentLines | undefined
-  const projection = createFullLineProjection(output)
+  const projection = createFullLineProjection(output, input)
   const observer = typeof ResizeObserver === 'undefined'
     ? undefined
     : new ResizeObserver(scheduleRender)
 
   observer?.observe(input)
   input.addEventListener('scroll', scheduleRender)
+  projection.onLayoutChange = () => scheduleWindow()
+
+  function scheduleWindow() {
+    if (!active || virtual) return
+    cancelAnimationFrame(windowFrame)
+    windowFrame = requestAnimationFrame(() => {
+      windowFrame = 0
+      if (!active || virtual) return
+      projection.updateWindow()
+    })
+  }
 
   function scheduleRender() {
-    if (!active || !virtual) return
+    if (!active) return
+    if (!virtual) {
+      scheduleWindow()
+      return
+    }
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(render)
   }
@@ -292,6 +447,7 @@ export function createAllDomRenderer(
         cancelAnimationFrame(sourceFrame)
         sourceFrame = 0
         projection.sync(next.document, next)
+        projection.updateWindow()
         onRender()
       }
       applyShikitorTheme(target, {
@@ -307,7 +463,9 @@ export function createAllDomRenderer(
       active = false
       cancelAnimationFrame(frame)
       cancelAnimationFrame(sourceFrame)
+      cancelAnimationFrame(windowFrame)
       observer?.disconnect()
+      projection.dispose()
       input.removeEventListener('scroll', scheduleRender)
     },
     enter(nextDocument: DocumentLines, theme: string, useVirtualViewport: boolean) {
@@ -322,6 +480,7 @@ export function createAllDomRenderer(
         render()
       } else {
         projection.sync(nextDocument)
+        projection.updateWindow()
         onRender()
       }
       output.dataset.renderState = 'plaintext'
@@ -334,7 +493,9 @@ export function createAllDomRenderer(
       active = false
       cancelAnimationFrame(frame)
       cancelAnimationFrame(sourceFrame)
+      cancelAnimationFrame(windowFrame)
       sourceFrame = 0
+      windowFrame = 0
       projection.clear()
     }
   }

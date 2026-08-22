@@ -22,7 +22,8 @@ export {
 export {
   createTokenLine,
   createTokenLineChildren,
-  LINE_PATCH_EVENT
+  LINE_PATCH_EVENT,
+  VIRTUAL_LINE_ATTRIBUTE
 } from './creator/controlled/allDomRenderer'
 export type { DocumentLines } from './creator/controlled/documentLines'
 export { createDocumentLines } from './creator/controlled/documentLines'

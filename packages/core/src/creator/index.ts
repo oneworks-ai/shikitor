@@ -466,6 +466,26 @@ export async function create(
       const { resolvePosition } = this.rawTextHelper
       const resolvedStart = resolvePosition(start)
       const resolvedEnd = resolvePosition(end)
+      // A focused textarea can take the edit through the browser's editing
+      // engine, exactly like typing: the native undo stack records it and
+      // the textarea patches its internal text instead of rebuilding every
+      // line (Chrome re-creates one text node and <br> per line for
+      // setRangeText/value assignments). Unfocused editors, or browsers that
+      // refuse the command, keep the programmatic path.
+      if (
+        document.activeElement === input
+        && typeof document.execCommand === 'function'
+      ) {
+        const previous = input.value
+        input.setSelectionRange(resolvedStart.offset, resolvedEnd.offset)
+        try {
+          if (document.execCommand('insertText', false, text) && input.value !== previous) {
+            return Promise.resolve()
+          }
+        } catch {
+          // Fall through to the programmatic edit.
+        }
+      }
       input.setRangeText(text, resolvedStart.offset, resolvedEnd.offset, 'end')
       input.dispatchEvent(new Event('input'))
       return Promise.resolve()
