@@ -42,6 +42,10 @@ function markerFor(row: ShikitorDiffRow, side: 'new' | 'old') {
   return side === 'new' ? '+' : '−'
 }
 
+function rowKey(row: ShikitorDiffRow | undefined) {
+  return row ? `${row.kind}|${row.hunkId ?? ''}|${inlineKey(row.newInline)}` : ''
+}
+
 function inlineKey(ranges: readonly ShikitorDiffInlineRange[]) {
   if (!ranges.length) return ''
   let key = ''
@@ -116,6 +120,12 @@ export class DiffView {
   private fullRender = true
   private rowsByLine = new Map<number, ShikitorDiffRow>()
   private actionLines = new Map<number, ShikitorDiffHunk>()
+  /** Line maps stay valid until line elements are added or removed. */
+  private outputLines = new Map<number, HTMLElement>()
+  private gutterLines = new Map<number, HTMLElement>()
+  private lineMapsValid = false
+  /** Lines whose row or hunk-action key changed in the last model update. */
+  private changedLines = new Set<number>()
 
   constructor(
     private target: HTMLElement,
@@ -134,6 +144,7 @@ export class DiffView {
     this.observer = new MutationObserver(records => {
       if (!lineStructureChanged(records)) return
       this.fullRender = true
+      this.lineMapsValid = false
       this.schedule()
     })
     const options: MutationObserverInit = {
@@ -158,8 +169,10 @@ export class DiffView {
   }
 
   update(state: ViewState) {
+    const previous = this.state
+    const previousRows = this.rowsByLine
+    const previousActions = this.actionLines
     this.state = state
-    this.fullRender = true
     this.rowsByLine = new Map()
     for (const row of state.model.rows) {
       if (row.newLine) this.rowsByLine.set(row.newLine, row)
@@ -170,6 +183,25 @@ export class DiffView {
         const row = hunk.rows.find(item => item.newLine)
         if (row?.newLine) this.actionLines.set(row.newLine, hunk)
       }
+    }
+    if (
+      previous
+      && previous.view === state.view
+      && previous.oldLines === state.oldLines
+      && this.lineMapsValid
+    ) {
+      // Same view and line DOM: only lines whose keys changed are touched.
+      const lines = new Set<number>([...previousRows.keys(), ...this.rowsByLine.keys()])
+      for (const line of lines) {
+        const before = previousRows.get(line)
+        const after = this.rowsByLine.get(line)
+        if (
+          rowKey(before) !== rowKey(after)
+          || previousActions.get(line)?.id !== this.actionLines.get(line)?.id
+        ) this.changedLines.add(line)
+      }
+    } else {
+      this.fullRender = true
     }
     this.target.dataset.shikitorDiffView = state.view
     this.target.classList.toggle('shikitor--diff-split', state.view === 'split')
@@ -198,6 +230,7 @@ export class DiffView {
   }
 
   private lineMaps() {
+    if (this.lineMapsValid) return { gutterLines: this.gutterLines, outputLines: this.outputLines }
     const outputLines = new Map<number, HTMLElement>()
     const gutterLines = new Map<number, HTMLElement>()
     for (const element of this.output.querySelectorAll<HTMLElement>('.shikitor-output-line[data-line]')) {
@@ -206,6 +239,9 @@ export class DiffView {
     for (const element of this.gutters.querySelectorAll<HTMLElement>('.shikitor-gutter-line[data-line]')) {
       gutterLines.set(Number(element.dataset.line), element)
     }
+    this.outputLines = outputLines
+    this.gutterLines = gutterLines
+    this.lineMapsValid = true
     return { gutterLines, outputLines }
   }
 
@@ -253,33 +289,33 @@ export class DiffView {
     outputLines: Map<number, HTMLElement>,
     gutterLines: Map<number, HTMLElement>
   ) {
-    const state = this.state!
-    const actionLines = this.actionLines
-    const rowsByLine = this.rowsByLine
     for (const [line, element] of outputLines) this.decorateOutputLine(line, element)
-    for (const [line, element] of gutterLines) {
-      const row = rowsByLine.get(line)
-      const hunk = actionLines.get(line)
-      const key = row
-        ? `${row.kind}|${row.hunkId ?? ''}|${hunk ? hunk.id : ''}`
-        : ''
-      const applied = this.appliedGutter.get(element)
-      if (applied === key) continue
-      if (applied) this.cleanGutterLine(element)
-      if (row) {
-        element.dataset.diffKind = row.kind
-        if (row.hunkId) element.dataset.hunk = row.hunkId
-        const marker = document.createElement('span')
-        marker.className = 'shikitor-diff-gutter-marker'
-        marker.textContent = markerFor(row, 'new')
-        element.append(marker)
-        if (hunk && state.actions) {
-          element.append(createHunkActions(hunk, state.actions, state.onAction))
-        }
-        this.appliedGutter.set(element, key)
-      } else {
-        this.appliedGutter.delete(element)
+    for (const [line, element] of gutterLines) this.decorateGutterLine(line, element)
+  }
+
+  private decorateGutterLine(line: number, element: HTMLElement) {
+    const state = this.state!
+    const row = this.rowsByLine.get(line)
+    const hunk = this.actionLines.get(line)
+    const key = row
+      ? `${row.kind}|${row.hunkId ?? ''}|${hunk ? hunk.id : ''}`
+      : ''
+    const applied = this.appliedGutter.get(element)
+    if (applied === key) return
+    if (applied) this.cleanGutterLine(element)
+    if (row) {
+      element.dataset.diffKind = row.kind
+      if (row.hunkId) element.dataset.hunk = row.hunkId
+      const marker = document.createElement('span')
+      marker.className = 'shikitor-diff-gutter-marker'
+      marker.textContent = markerFor(row, 'new')
+      element.append(marker)
+      if (hunk && state.actions) {
+        element.append(createHunkActions(hunk, state.actions, state.onAction))
       }
+      this.appliedGutter.set(element, key)
+    } else {
+      this.appliedGutter.delete(element)
     }
   }
 
@@ -342,15 +378,26 @@ export class DiffView {
     const state = this.state
     if (!state) return
     if (!this.fullRender) {
-      // Only materialized or patched lines need decorating again.
+      // Only lines whose row changed, or whose content was re-rendered, need
+      // decorating again; the line maps are still valid.
+      const { gutterLines, outputLines } = this.lineMaps()
+      for (const line of this.changedLines) {
+        const outputLine = outputLines.get(line)
+        if (outputLine) this.decorateOutputLine(line, outputLine)
+        const gutterLine = gutterLines.get(line)
+        if (gutterLine) this.decorateGutterLine(line, gutterLine)
+      }
       for (const element of this.patchedLines) {
         if (!element.isConnected) continue
         this.decorateOutputLine(Number(element.dataset.line), element)
       }
+      this.changedLines.clear()
       this.patchedLines.clear()
+      if (state.view === 'split') this.renderSplit(outputLines)
       return
     }
     this.fullRender = false
+    this.changedLines.clear()
     this.patchedLines.clear()
     const { gutterLines, outputLines } = this.lineMaps()
     this.decorateCurrent(outputLines, gutterLines)
@@ -361,6 +408,11 @@ export class DiffView {
       this.windowKey = ''
       return
     }
+    this.renderSplit(outputLines)
+  }
+
+  private renderSplit(outputLines: Map<number, HTMLElement>) {
+    const state = this.state!
     this.lineHeight = Number.parseFloat(getComputedStyle(this.input).lineHeight)
       || DEFAULT_LINE_HEIGHT
     const visible = resolveVisualRows(state.model.rows, line => {

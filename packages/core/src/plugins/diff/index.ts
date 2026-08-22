@@ -1,6 +1,6 @@
 import './index.scss'
 
-import { definePlugin } from '@shikitor/core'
+import { definePlugin, LINE_PATCH_EVENT } from '@shikitor/core'
 
 import type { CodeFoldingController } from '../code-folding'
 import codeFolding from '../code-folding'
@@ -9,7 +9,7 @@ import lineWidgets from '../line-widgets'
 import { acceptDiffHunk, createDiffTextEdit, rejectDiffHunk } from './actions'
 import { computeCollapsedContexts } from './collapsed-context'
 import { applyDiffTextEdit } from './editing'
-import { computeDiffModel } from './model'
+import { computeDiffModel, updateDiffModelForLineEdit } from './model'
 import { DiffSyntaxRenderer } from './syntax'
 import type {
   ShikitorDiffCollapseUnchangedOptions,
@@ -104,7 +104,10 @@ export default definePlugin({
     }
 
     function recompute(current = shikitor.value) {
-      model = computeDiffModel(original, current, options)
+      // Typing inside an existing change only moves one row's text; the
+      // structure (and a full Myers pass) is needed only for other edits.
+      model = (model.original === original && updateDiffModelForLineEdit(model, current, options))
+        || computeDiffModel(original, current, options)
       renderState()
       notify()
     }
@@ -201,11 +204,21 @@ export default definePlugin({
     ctx.provide('shikitorDiff', controller)
     const themeObserver = new MutationObserver(() => { void renderOriginalSyntax() })
     themeObserver.observe(target, { attributes: true, attributeFilter: ['style'] })
+    // Removed-row widgets render their code only while their anchor line is
+    // materialized; follow the anchor's content changes.
+    const onLinePatch = (event: Event) => {
+      const line = event.target
+      if (!(line instanceof HTMLElement)) return
+      const number = Number(line.dataset.line)
+      if (Number.isInteger(number)) widgetGroup.refreshAfterLine(number)
+    }
+    output.addEventListener(LINE_PATCH_EVENT, onLinePatch)
     void renderOriginalSyntax()
 
     return () => {
       syntaxEpoch++
       themeObserver.disconnect()
+      output.removeEventListener(LINE_PATCH_EVENT, onLinePatch)
       if (codeFoldingFiber) void codeFoldingFiber.dispose()
       void lineWidgetsFiber.dispose()
       syntax.dispose()

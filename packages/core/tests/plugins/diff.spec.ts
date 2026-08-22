@@ -7,7 +7,11 @@ import {
 } from '../../src/plugins/diff/actions'
 import { computeCollapsedContexts } from '../../src/plugins/diff/collapsed-context'
 import { computeInlineDiff } from '../../src/plugins/diff/inline'
-import { computeDiffModel } from '../../src/plugins/diff/model'
+import {
+  computeDiffModel,
+  findSingleLineEdit,
+  updateDiffModelForLineEdit
+} from '../../src/plugins/diff/model'
 
 describe('diff model', () => {
   it('aligns modified, removed, added and context rows', () => {
@@ -140,5 +144,33 @@ describe('diff view windows', () => {
     expect(resolveOriginalWindow(2200, 220, 22, 1000, 2)).toEqual({ first: 98, last: 112 })
     expect(resolveOriginalWindow(21900, 220, 22, 1000, 2)).toEqual({ first: 993, last: 1000 })
     expect(resolveOriginalWindow(0, 220, 0, 5, 2)).toEqual({ first: 0, last: 5 })
+  })
+})
+
+describe('single-line diff updates', () => {
+  it('locates a replacement confined to one line', () => {
+    expect(findSingleLineEdit('a\nb\nc', 'a\nbX\nc')).toBe(2)
+    expect(findSingleLineEdit('a\nb\nc', 'a\nb\nc!')).toBe(3)
+    expect(findSingleLineEdit('a\nb\nc', 'a\nb\n\nc')).toBeUndefined()
+    expect(findSingleLineEdit('a\nb\nc', 'a\nB\nC')).toBeUndefined()
+    expect(findSingleLineEdit('same', 'same')).toBeUndefined()
+  })
+
+  it('matches a full recomputation when typing inside a changed row', () => {
+    const original = 'one\ntwo\nthree\nfour'
+    const previousCurrent = 'one\ntwo!\nthree\nfour\nfive'
+    const previous = computeDiffModel(original, previousCurrent)
+    for (const next of ['one\ntwo!!\nthree\nfour\nfive', 'one\ntwo!\nthree\nfour\nfive6']) {
+      const updated = updateDiffModelForLineEdit(previous, next)
+      expect(updated).toBeDefined()
+      expect(updated).toEqual(computeDiffModel(original, next))
+    }
+  })
+
+  it('defers to the full diff for context lines and structural edits', () => {
+    const original = 'one\ntwo\nthree'
+    const previous = computeDiffModel(original, 'one\ntwo!\nthree')
+    expect(updateDiffModelForLineEdit(previous, 'one!\ntwo!\nthree')).toBeUndefined()
+    expect(updateDiffModelForLineEdit(previous, 'one\ntwo!\n\nthree')).toBeUndefined()
   })
 })
