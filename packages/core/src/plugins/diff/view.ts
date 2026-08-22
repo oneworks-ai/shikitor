@@ -1,4 +1,4 @@
-import { LINE_PATCH_EVENT } from '@shikitor/core'
+import { LINE_PATCH_EVENT, VIRTUAL_LINE_ATTRIBUTE } from '@shikitor/core'
 
 import { applyInlineRanges, cloneDiffLine, createHunkActions, createPlainLine } from './dom'
 import type { DiffOriginalLines } from './syntax'
@@ -112,6 +112,10 @@ export class DiffView {
   private visualRows: VisualRow[] = []
   private lineHeight = DEFAULT_LINE_HEIGHT
   private windowKey = ''
+  private patchedLines = new Set<HTMLElement>()
+  private fullRender = true
+  private rowsByLine = new Map<number, ShikitorDiffRow>()
+  private actionLines = new Map<number, ShikitorDiffHunk>()
 
   constructor(
     private target: HTMLElement,
@@ -128,7 +132,9 @@ export class DiffView {
     target.append(this.original, this.current)
     target.classList.add('shikitor--diff')
     this.observer = new MutationObserver(records => {
-      if (lineStructureChanged(records)) this.schedule()
+      if (!lineStructureChanged(records)) return
+      this.fullRender = true
+      this.schedule()
     })
     const options: MutationObserverInit = {
       attributeFilter: ['hidden', 'data-fold-presentation'],
@@ -147,11 +153,24 @@ export class DiffView {
     const line = event.target
     if (!(line instanceof HTMLElement)) return
     this.appliedOutput.delete(line)
+    this.patchedLines.add(line)
     this.schedule()
   }
 
   update(state: ViewState) {
     this.state = state
+    this.fullRender = true
+    this.rowsByLine = new Map()
+    for (const row of state.model.rows) {
+      if (row.newLine) this.rowsByLine.set(row.newLine, row)
+    }
+    this.actionLines = new Map()
+    if (state.actions) {
+      for (const hunk of state.model.hunks) {
+        const row = hunk.rows.find(item => item.newLine)
+        if (row?.newLine) this.actionLines.set(row.newLine, hunk)
+      }
+    }
     this.target.dataset.shikitorDiffView = state.view
     this.target.classList.toggle('shikitor--diff-split', state.view === 'split')
     this.target.style.setProperty(
@@ -207,39 +226,37 @@ export class DiffView {
       .forEach(element => element.remove())
   }
 
+  private decorateOutputLine(line: number, element: HTMLElement) {
+    const row = this.rowsByLine.get(line)
+    // Placeholder lines carry no text yet; the materialization event re-keys
+    // them so inline ranges are applied once content exists.
+    const virtual = element.hasAttribute(VIRTUAL_LINE_ATTRIBUTE)
+    const key = row
+      ? `${row.kind}|${row.hunkId ?? ''}|${virtual ? 'v' : inlineKey(row.newInline)}`
+      : ''
+    const applied = this.appliedOutput.get(element)
+    if (applied === key) return
+    if (applied) this.cleanOutputLine(element)
+    if (row) {
+      element.dataset.diffKind = row.kind
+      if (row.hunkId) element.dataset.hunk = row.hunkId
+      if (!virtual) {
+        applyInlineRanges(element, row.newInline, 'shikitor-diff-inline shikitor-diff-inline--added')
+      }
+      this.appliedOutput.set(element, key)
+    } else {
+      this.appliedOutput.delete(element)
+    }
+  }
+
   private decorateCurrent(
     outputLines: Map<number, HTMLElement>,
     gutterLines: Map<number, HTMLElement>
   ) {
     const state = this.state!
-    const rowsByLine = new Map<number, ShikitorDiffRow>()
-    for (const row of state.model.rows) {
-      if (row.newLine) rowsByLine.set(row.newLine, row)
-    }
-    const actionLines = new Map<number, ShikitorDiffHunk>()
-    if (state.actions) {
-      for (const hunk of state.model.hunks) {
-        const row = hunk.rows.find(item => item.newLine)
-        if (row?.newLine) actionLines.set(row.newLine, hunk)
-      }
-    }
-    for (const [line, element] of outputLines) {
-      const row = rowsByLine.get(line)
-      const key = row
-        ? `${row.kind}|${row.hunkId ?? ''}|${inlineKey(row.newInline)}`
-        : ''
-      const applied = this.appliedOutput.get(element)
-      if (applied === key) continue
-      if (applied) this.cleanOutputLine(element)
-      if (row) {
-        element.dataset.diffKind = row.kind
-        if (row.hunkId) element.dataset.hunk = row.hunkId
-        applyInlineRanges(element, row.newInline, 'shikitor-diff-inline shikitor-diff-inline--added')
-        this.appliedOutput.set(element, key)
-      } else {
-        this.appliedOutput.delete(element)
-      }
-    }
+    const actionLines = this.actionLines
+    const rowsByLine = this.rowsByLine
+    for (const [line, element] of outputLines) this.decorateOutputLine(line, element)
     for (const [line, element] of gutterLines) {
       const row = rowsByLine.get(line)
       const hunk = actionLines.get(line)
@@ -324,6 +341,17 @@ export class DiffView {
   private render() {
     const state = this.state
     if (!state) return
+    if (!this.fullRender) {
+      // Only materialized or patched lines need decorating again.
+      for (const element of this.patchedLines) {
+        if (!element.isConnected) continue
+        this.decorateOutputLine(Number(element.dataset.line), element)
+      }
+      this.patchedLines.clear()
+      return
+    }
+    this.fullRender = false
+    this.patchedLines.clear()
     const { gutterLines, outputLines } = this.lineMaps()
     this.decorateCurrent(outputLines, gutterLines)
     if (state.view !== 'split') {

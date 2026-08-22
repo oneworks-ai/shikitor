@@ -13,6 +13,13 @@
     // the widget to extend through the output's left edge into the gutter.
     overflow: visible;
     pointer-events: none;
+
+    // A visible-overflow box cannot scroll, so the projection follows the
+    // editor's synchronized scroll offsets through a transform instead of
+    // `scrollTop`/`scrollLeft`.
+    > pre {
+      transform: translate(var(--shikitor-offset-x, 0px), var(--shikitor-offset-y, 0px));
+    }
   }
 }
 

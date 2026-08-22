@@ -1,6 +1,6 @@
 import './code-folding.scss'
 
-import { definePlugin, LINE_PATCH_EVENT } from '@shikitor/core'
+import { definePlugin, LINE_PATCH_EVENT, VIRTUAL_LINE_ATTRIBUTE } from '@shikitor/core'
 
 import { insertGutterDecorationSlot } from './_internal/gutter-decoration-slot'
 import { installCursorGeometryLayer } from './cursor-geometry-layer'
@@ -742,7 +742,10 @@ export default definePlugin({
       // wider than the folded document. The rendered output is the visual
       // source of truth for horizontal geometry, just like visibleLines() is
       // for the vertical axis.
-      const contentWidth = output.scrollWidth
+      const contentWidth = Math.max(
+        output.scrollWidth,
+        output.querySelector<HTMLElement>('.shikitor-output-lines')?.offsetWidth ?? 0
+      )
       const nextVisualOwnsHorizontalScroll = shouldUseFoldVisualHorizontalScroll(
         collapsed.size > 0,
         contentWidth,
@@ -800,9 +803,14 @@ export default definePlugin({
       target.classList.add('shikitor--fold-collapsed')
       const lineHeight = lineHeightPx()
       const viewportHeight = container.clientHeight
+      // The projection may be scrolled through a transform (line widgets make
+      // the output overflow visible), which shrinks scrollHeight; the layout
+      // height of the line container is transform-independent.
+      const projectedHeight = output.querySelector<HTMLElement>('.shikitor-output-lines')?.offsetHeight ?? 0
       const contentHeight = Math.max(
         hiddenIndex().visibleLineCount * lineHeight,
-        output.scrollHeight
+        output.scrollHeight,
+        projectedHeight
       )
       const trackHeight = Math.max(0, viewportHeight - 4)
       const metrics = resolveFoldScrollMetrics(
@@ -1367,7 +1375,9 @@ export default definePlugin({
         outputLine.append(placeholder)
         if (range.kind === 'line-comment' || !range.close) continue
         const closingLine = outputLines.get(suffixLine)
-        const suffixContent = closingLine && cloneLineSuffix(closingLine, suffixColumn)
+        const suffixContent = closingLine && !closingLine.hasAttribute(VIRTUAL_LINE_ATTRIBUTE)
+          ? cloneLineSuffix(closingLine, suffixColumn)
+          : undefined
         const suffix = document.createElement('span')
         suffix.className = 'shikitor-fold-suffix'
         suffix.dataset.foldSourceStart = String(suffixStart)

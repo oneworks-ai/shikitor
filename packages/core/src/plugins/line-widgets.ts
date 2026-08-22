@@ -322,14 +322,32 @@ export default definePlugin({
       }
       if (!full && !gutterWidthChanged && changed.length === 0) return undefined
       geometry = createLineWidgetGeometry(mounted)
+      // The textarea's scroll range must cover the projected document, which
+      // block widgets lengthen and folded lines shorten. Only the part the
+      // source text does not already cover is added as bottom padding, and
+      // the padding never makes the textarea box taller than its container:
+      // an overflowing textarea lets the browser's caret reveal scroll the
+      // editor's clip boxes instead of the textarea.
+      const projectedHeight = output.querySelector<HTMLElement>('.shikitor-output-lines')?.offsetHeight ?? 0
+      const currentPadding = Number.parseFloat(input.style.paddingBottom) || 0
+      const textHeight = input.scrollHeight - currentPadding
+      const containerHeight = container.clientHeight
+      extraHeight = Math.max(0, Math.min(
+        Math.max(projectedHeight - textHeight, 0),
+        Math.max(0, containerHeight - readLineHeight())
+      ))
       return changed
     }
 
+    let extraHeight = 0
+
     function applyGeometry(changed: MountedLineWidget[]) {
       for (const entry of changed) entry.spacer.style.height = `${entry.height}px`
-      const extraHeight = totalLineWidgetHeight(geometry)
-      input.style.setProperty('--shikitor-line-widget-extra-height', `${extraHeight}px`)
-      input.style.paddingBottom = `${extraHeight}px`
+      const value = `${extraHeight}px`
+      if (input.style.paddingBottom !== value) {
+        input.style.setProperty('--shikitor-line-widget-extra-height', value)
+        input.style.paddingBottom = value
+      }
     }
 
     function syncGeometry(regions?: ReadonlySet<Element>) {

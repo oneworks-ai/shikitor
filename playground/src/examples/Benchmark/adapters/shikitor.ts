@@ -131,6 +131,9 @@ export function createShikitorAdapter(renderMode: ShikitorRenderMode): Benchmark
           const output = root.querySelector<HTMLElement>('.shikitor-output')
           const previousVersion = output?.dataset.renderVersion
           pendingRenderVersion = previousVersion
+          // Edits target a focused editor, as typing would; the core then
+          // applies them through the browser's editing engine.
+          if (document.activeElement !== input) input.focus({ preventScroll: true })
           const offset = editor.value.length
           await editor.setRangeText({ start: offset, end: offset }, text)
           if (renderMode === 'all-dom') {
