@@ -60,9 +60,12 @@
 }
 
 .shikitor--code-folding.shikitor--fold-rendering {
+  // Hidden while a fold pass is pending. `opacity` is not inherited, so
+  // toggling the class restyles two elements instead of every line and
+  // token underneath them (`visibility` would propagate to all of them).
   .shikitor-output-lines,
   > .shikitor-lines {
-    visibility: hidden;
+    opacity: 0;
   }
 }
 
