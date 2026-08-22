@@ -36,9 +36,12 @@ function writeOffsets(element: HTMLElement, scroll: ProjectionScroll) {
   element.style.setProperty('--shikitor-offset-y', `${-scroll.top}px`)
 }
 
-/** Give a new follower (for example a popup) the current offsets. */
+/**
+ * Give a follower that was created after the last scroll (for example a
+ * popup) the current offsets. The caller opts the element in by setting
+ * `SCROLL_FOLLOWER_CLASS`; later scrolls then reach it through the class.
+ */
 export function applyProjectionScrollTo(target: HTMLElement, element: HTMLElement) {
-  element.classList.add(SCROLL_FOLLOWER_CLASS)
   writeOffsets(element, getProjectionScroll(target))
 }
 
