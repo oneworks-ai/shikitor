@@ -204,6 +204,48 @@ leaving the window drop back to placeholders. Element count becomes
 O(lines + window × tokens): 6.9 k instead of 26.9 k at 1,000 lines, and the
 remaining style and layout work no longer grows with the document.
 
+Edited lines are patched in place as well (element, attributes and
+position survive; plugins receive `LINE_PATCH_EVENT`), so a keystroke is a
+content change rather than a line-structure mutation. That lets the plugins
+skip their passes: code folding keeps its DOM when ranges, collapsed state,
+line count and line structure are unchanged (`foldRenderSignature`);
+line-widgets keeps its regions and only refreshes widget contents when the
+widget list and line structure are unchanged (`sameLineWidgetLayout`); the
+diff view keeps its line maps while the structure is unchanged and, on a
+model update, decorates only lines whose row key changed; and typing inside
+an added or modified row updates that row directly
+(`updateDiffModelForLineEdit`) instead of re-running the Myers diff over the
+whole document (context-line and structural edits still take the full
+diff). Removed-row widgets render their cloned baseline line only while
+their anchor line is materialized.
+
+Two more costs scaled with the document through inherited CSS properties
+rather than DOM size, and are removed: the caret position variables
+(`--shikitor-cursor-t/l`) were written on the editor root, so every caret
+move restyled every descendant — they are now written on the
+`.shikitor-cursors` layer through `setCursorGeometry` (all in-repo writers,
+including line-widgets, code-folding and inline-replacements, go through it;
+`dsh-shikitor`'s own root writes keep working because the cursor elements
+inherit the nearest value); and the plaintext fallback colors on the output
+(`color` inherits) were rewritten on every keystroke — they are now applied
+once. The fold-pending class uses `opacity` instead of inherited
+`visibility`.
+
+The scroll offset variables (`--shikitor-scroll-t/l`, `--shikitor-offset-x/y`)
+had the same shape: written on the root on every scroll frame, inherited by
+every line and token, consumed only by the caret layer, popups and selection
+overlays. `setProjectionScroll` now writes them on elements that opt in with
+the `shikitor-follows-scroll` class (the cursor layer, popups through
+`applyProjectionScrollTo`, code folding's selection layer), moves the full
+line projection with a `transform` on its `<pre>` instead of `scrollTop`
+(which also makes the widget case consistent), keeps the root variables only
+for the small less-DOM, viewport-virtual and serialized-HTML projections, and
+stores the visual horizontal offset in a data attribute instead of a root
+custom property. Core, code folding and inline replacements route their
+writes through the helper. Scroll-to-paint at 5,000 lines (dev build, 400
+steps) went from 67 ms to 16.7 ms per step; at 1,000 lines from 22 ms to
+16.7 ms (`playground/scripts/scroll-diff.mjs`).
+
 Two pre-existing defects surfaced once scrolled editing was exercised and
 are fixed alongside: the line-widgets stylesheet made the output
 `overflow: visible` (so `scrollTop` could not scroll the projection while
@@ -296,67 +338,58 @@ otherwise). "Before" values are the baseline medians from the section above.
 | | Pierre 1.3.1 editable diff | 2,496 ms | 1,365 ms | 16.7 ms | 463.1 ms | 16.6 ms | 60,359 |
 
 Those rows measured the incremental projection with every line still
-carrying token DOM. With lazy line materialization (placeholders outside
-the viewport window), the scroll fixes and focused edits applied through the
-editing engine, the same harness gives:
+carrying token DOM. The final state — lazy line materialization, scoped
+caret and scroll variables, in-place keystroke patches with skipped plugin
+passes, incremental diff decoration and model updates, windowed widget
+content, and focused edits applied through the editing engine — measured
+with the same harness:
 
 | Configuration | Engine | Cold mount | Warm mount | Edit P50 | Edit P95 | Scroll | DOM elements | Memory Δ |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 lines, unified | **Shikitor diff (final)** | **214.0 ms** | **56.4 ms** | **16.7 ms** | **25.1 ms** | **24.8 ms** | **23,347** | **28.0 MB** |
-| | Monaco / CodeMirror / Pierre | 53.1 / 32.2 / 614.8 ms | 17.5 / 17.1 / 275.1 ms | 16.7 / 16.7 / 16.7 ms | 17.2 / 16.9 / 16.8 ms | 16.7 / 16.4 / 16.7 ms | 1,373 / 834 / 11,959 | 84.3 / 6.6 / 19.1 MB |
-| 1,000 lines, split | **Shikitor diff (final)** | **89.8 ms** | **53.8 ms** | **16.8 ms** | **33.1 ms** | **18.0 ms** | **8,208** | **23.6 MB** |
-| | Monaco / CodeMirror / Pierre | 53.6 / 29.9 / 653.3 ms | 16.4 / 16.7 / 333.4 ms | 16.7 / 16.7 / 16.7 ms | 17.2 / 16.7 / 16.9 ms | 16.6 / 16.6 / 16.3 ms | 642 / 753 / 21,286 | 83.6 / 6.2 / 22.2 MB |
-| 5,000 lines, unified | **Shikitor diff (final)** | **415.2 ms** | **273.9 ms** | **83.1 ms** | **202.8 ms** | **41.2 ms** | **176,938** | **91.8 MB** |
-| | Monaco / CodeMirror / Pierre | 83.6 / 74.7 / 2,511 ms | 17.4 / 55.8 / 1,356 ms | 16.7 / 16.6 / 16.7 ms | 34.5 / 16.7 / 444.5 ms | 16.5 / 16.7 / 16.1 ms | 4,543 / 834 / 60,359 | 104.6 / 10.4 / 66.3 MB |
+| 1,000 lines, unified | **Shikitor diff (final)** | **198.8 ms** | **39.5 ms** | **16.7 ms** | **24.9 ms** | **16.7 ms** | **10,904** | **23.9 MB** |
+| | Monaco / CodeMirror / Pierre | 51.4 / 30.4 / 591.2 ms | 17.2 / 16.6 / 275.1 ms | 16.7 / 16.7 / 16.7 ms | 17.5 / 18.1 / 17.4 ms | 16.6 / 16.4 / 16.2 ms | 1,373 / 834 / 11,959 | 95.1 / 6.6 / 19.0 MB |
+| 1,000 lines, split | **Shikitor diff (final)** | **141.8 ms** | **39.2 ms** | **16.7 ms** | **24.5 ms** | **16.8 ms** | **8,208** | **23.6 MB** |
+| | Monaco / CodeMirror / Pierre | 50.6 / 28.3 / 638.7 ms | 17.6 / 16.9 / 329.9 ms | 16.7 / 16.7 / 16.6 ms | 17.8 / 17.1 / 18.3 ms | 16.6 / 15.6 / 16.4 ms | 642 / 753 / 21,286 | 83.0 / 6.2 / 22.2 MB |
+| 5,000 lines, unified | **Shikitor diff (final)** | **294.1 ms** | **195.1 ms** | **25.0 ms** | **110.7 ms** | **19.6 ms** | **60,951** | **56.8 MB** |
+| | Monaco / CodeMirror / Pierre | 58.6 / 73.3 / 2,472 ms | 16.4 / 55.1 / 1,337 ms | 16.6 / 16.4 / 16.7 ms | 34.2 / 18.4 / 452.7 ms | 15.8 / 16.6 / 15.8 ms | 4,543 / 834 / 60,359 | 102.5 / 10.3 / 71.2 MB |
 
-At 1,000 lines the diff editor now paints an edit in one frame in both
-views, the same as Monaco's DiffEditor, CodeMirror's MergeView and Pierre
-(edit P50 16.7 ms; the baseline was 727 ms unified and 358 ms split), with
-a warm mount of ~55 ms (baseline 859/540 ms) and 28 MB of application
-memory (Monaco 84 MB). At 5,000 lines the edit is 83 ms (baseline 19.4 s,
-234× faster; 159 ms before lazy materialization) and the warm mount 274 ms
-(baseline 17.2 s). The diff editor runs its syntax work on the Worker lane
+At 1,000 lines the diff editor paints an edit and a scroll step in one frame
+in both views, the same as Monaco's DiffEditor, CodeMirror's MergeView and
+Pierre (edit P50 16.7 ms against a baseline of 727 ms unified and 358 ms
+split), warm-mounts in ~40 ms (baseline 859/540 ms) and uses 24 MB of
+application memory (Monaco 95 MB). At 5,000 lines the edit is 25 ms
+(baseline 19.4 s, 776× faster; 159 ms after the first incremental round), the
+scroll step 20 ms (baseline 88 ms) and the warm mount 195 ms (baseline
+17.2 s). The diff editor runs its syntax work on the Worker lane
 (`all-dom/worker`) like plain editors, because the token snapshot path is
 used instead of the main-thread `codeToHtml` fallback. DOM counts are taken
 after the benchmark's whole-document replacement, which turns a quarter of
-the lines into modified rows with removed-row widgets; each widget still
-clones a complete tokenized baseline line, which is where most of the
-5,000-line count comes from.
+the lines into modified rows; removed-row widgets now carry cloned code only
+inside the materialized window, so the count is dominated by the gutter and
+per-line placeholders (one element per line is the contract plugins keep).
 
-What remains at 5,000 lines, per keystroke in the dev build (~100 ms):
-~43 ms of style recalculation and 13 ms of layout, and ~45 ms of JavaScript
-spread over the O(n) passes that still visit every line element (code
-folding's sweep, the diff view's line index, the widget anchor index, the
-materialization window's hidden-line scan, and the Myers diff over 5,000
-lines). The style work is dominated by root-level custom properties: the
-caret position variables (`--shikitor-cursor-t/l`) and the scroll offsets
-are inherited from the editor root, so each change restyles every
-descendant; they are a cross-package contract (`dsh-shikitor` reads and
-writes them), so they were left in place. Scoping those variables to the
-layers that consume them, and rendering removed-row widget content only
-inside the viewport window, are the next steps. Cold mount at 1,000 lines is
-dominated by lazily loading the TypeScript grammar into the shared engine on
-the first instance; Pierre's cold mount includes its own Shiki
-initialization.
-
-Raw JSON exports for every run (baseline and after) are produced by
-`playground/scripts/run-benchmark.mjs` and summarized with
-`playground/scripts/summarize-benchmark.mjs`; they include the environment
-(`HeadlessChrome/151`, 14 hardware threads) and every per-engine metric.
+What remains at 5,000 lines, per keystroke in the dev build (~33 ms):
+~8 ms of style recalculation and 4 ms of layout for the few forced flushes
+that plugins still need, and ~16 ms of JavaScript: the widget content
+refresh loop, the diff view's key comparison and the window bookkeeping are
+O(changed) but the diff model's single-line detection still scans the text
+once, and context-line or structural edits take the full Myers pass. Cold
+mount at 1,000 lines is dominated by lazily loading the TypeScript grammar
+into the shared engine on the first instance; Pierre's cold mount includes
+its own Shiki initialization.
 
 ### Edit loop after the change
 
 CPU profile of the same dev-build edit loop as above (1,000 lines, 8
 keystrokes): edit P50 fell from ~800 ms to ~17 ms. What remains per
 keystroke, from the performance trace (`playground/scripts/trace-diff.mjs`):
-about 8.5 ms of style recalculation, 2 ms of layout, 2.5 ms of paint and
-~10 ms of JavaScript (the line-widgets pass with its single forced layout
-flush, the code-folding sweep, the caret geometry measurement and the diff
-view keying pass). `codeToHtml`, `output.innerHTML`, per-row
-`querySelector`, per-widget layout reads and the textarea's inner-editor
-rebuild no longer appear: a focused editor applies `setRangeText` through
-the browser's editing engine, so Chrome patches its internal text instead of
-re-inserting one text node and `<br>` per line.
+about 4 ms of style recalculation, 2 ms of layout, 2 ms of paint and ~5 ms
+of JavaScript. `codeToHtml`, `output.innerHTML`, per-row `querySelector`,
+per-widget layout reads, the fold and widget sweeps, the Myers diff and the
+textarea's inner-editor rebuild no longer appear on a keystroke inside a
+change: a focused editor applies `setRangeText` through the browser's
+editing engine, so Chrome patches its internal text instead of re-inserting
+one text node and `<br>` per line.
 
 ## Acceptance criteria
 
@@ -385,3 +418,8 @@ re-inserting one text node and `<br>` per line.
   measured directly.
 - **Benchmark environment:** numbers come from one machine and headless
   Chrome; the driver exports environment metadata with each run.
+- **Remaining growth with document length:** gutter lines keep their number
+  elements for every line, the fold sweep and the widget layout check still
+  visit every line element when the structure changes, and context-line or
+  structural edits re-run the Myers diff; all are O(n) with small constants
+  and did not show in the final profiles at 5,000 lines.
