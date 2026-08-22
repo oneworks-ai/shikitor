@@ -3,6 +3,10 @@ import './popupsControlled.scss'
 import { proxy } from 'valtio/vanilla'
 
 import { cssvar } from '../../base'
+import {
+  applyProjectionScrollTo,
+  SCROLL_FOLLOWER_CLASS
+} from '../../creator/controlled/projectionScroll'
 import type { Shikitor } from '../../editor'
 import { classnames } from '../../utils/classnames'
 import { debounceSubscribe } from '../../utils/valtio/debounceSubscribe'
@@ -34,8 +38,12 @@ function updatePopupElement(
   ele.className = classnames(
     prefix,
     `${prefix}-${popup.id}`,
-    `${prefix}-${popup.position}`
+    `${prefix}-${popup.position}`,
+    SCROLL_FOLLOWER_CLASS
   )
+  // Popups are positioned in root coordinates and follow the projection's
+  // scroll offsets, which are published only on opted-in elements.
+  applyProjectionScrollTo(shikitor.element, ele)
   const { width, height } = popup
   width && (ele.style.width = `${width}px`)
   height && (ele.style.height = `${height}px`)

@@ -1,5 +1,11 @@
 import type { Shikitor } from '@shikitor/core'
-import { setCursorGeometry } from '@shikitor/core'
+import {
+  getProjectionScroll,
+  readVisualScrollLeft,
+  setCursorGeometry,
+  setProjectionScroll,
+  setVisualScrollLeft
+} from '@shikitor/core'
 
 import { resolveSelectionFocus } from '../../utils/resolveSelectionFocus'
 import { installCursorGeometryLayer } from '../cursor-geometry-layer'
@@ -74,10 +80,7 @@ export function createInlineReplacementVisuals({
   )
 
   function visualScrollLeft() {
-    const value = target.style.getPropertyValue('--shikitor-visual-scroll-l')
-      || target.style.getPropertyValue('--shikitor-scroll-l')
-    const parsed = Number.parseFloat(value)
-    return Number.isFinite(parsed) ? parsed : input.scrollLeft
+    return readVisualScrollLeft(target) ?? getProjectionScroll(target).left ?? input.scrollLeft
   }
   function hasActiveReplacement() {
     return replacementElements().length > 0
@@ -178,10 +181,8 @@ export function createInlineReplacementVisuals({
   function dispose() {
     keyboardNavigation.dispose()
     geometryLayer.dispose()
-    target.style.removeProperty('--shikitor-visual-scroll-l')
-    target.style.setProperty('--shikitor-scroll-l', `${input.scrollLeft}px`)
-    target.style.setProperty('--shikitor-offset-x', `${-input.scrollLeft}px`)
-    output.scrollLeft = input.scrollLeft
+    setVisualScrollLeft(target, undefined)
+    setProjectionScroll(target, output, { left: input.scrollLeft })
     selectionRenderer.dispose()
     target.classList.remove('shikitor--inline-replacement-active')
   }

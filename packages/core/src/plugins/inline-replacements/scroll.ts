@@ -1,4 +1,5 @@
 import type { Shikitor } from '@shikitor/core'
+import { setProjectionScroll, setVisualScrollLeft } from '@shikitor/core'
 
 import { resolveReplacementScrollLeft } from './geometry'
 
@@ -22,10 +23,8 @@ export function syncInlineReplacementScroll({
   target
 }: InlineReplacementScrollOptions) {
   if (!hasActiveReplacement) {
-    target.style.removeProperty('--shikitor-visual-scroll-l')
-    target.style.setProperty('--shikitor-scroll-l', `${input.scrollLeft}px`)
-    target.style.setProperty('--shikitor-offset-x', `${-input.scrollLeft}px`)
-    output.scrollLeft = input.scrollLeft
+    setVisualScrollLeft(target, undefined)
+    setProjectionScroll(target, output, { left: input.scrollLeft })
     return
   }
 
@@ -44,8 +43,6 @@ export function syncInlineReplacementScroll({
     else if (focusX > scrollLeft + viewportWidth) scrollLeft = focusX - viewportWidth
     scrollLeft = Math.min(maximum, Math.max(0, scrollLeft))
   }
-  target.style.setProperty('--shikitor-visual-scroll-l', `${scrollLeft}px`)
-  target.style.setProperty('--shikitor-scroll-l', `${scrollLeft}px`)
-  target.style.setProperty('--shikitor-offset-x', `${-scrollLeft}px`)
-  output.scrollLeft = scrollLeft
+  setVisualScrollLeft(target, scrollLeft)
+  setProjectionScroll(target, output, { left: scrollLeft })
 }

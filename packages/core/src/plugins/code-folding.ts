@@ -1,6 +1,14 @@
 import './code-folding.scss'
 
-import { definePlugin, LINE_PATCH_EVENT, setCursorGeometry, VIRTUAL_LINE_ATTRIBUTE } from '@shikitor/core'
+import {
+  definePlugin,
+  LINE_PATCH_EVENT,
+  SCROLL_FOLLOWER_CLASS,
+  setCursorGeometry,
+  setProjectionScroll,
+  setVisualScrollLeft,
+  VIRTUAL_LINE_ATTRIBUTE
+} from '@shikitor/core'
 
 import { insertGutterDecorationSlot } from './_internal/gutter-decoration-slot'
 import { installCursorGeometryLayer } from './cursor-geometry-layer'
@@ -638,7 +646,7 @@ export default definePlugin({
 
     target.classList.add('shikitor--code-folding')
     target.classList.add('shikitor--fold-rendering')
-    selectionLayer.className = 'shikitor-fold-selection'
+    selectionLayer.className = `shikitor-fold-selection ${SCROLL_FOLLOWER_CLASS}`
     scrollTrack.className = 'shikitor-fold-scrollbar shikitor-fold-scrollbar--vertical'
     scrollThumb.className = 'shikitor-fold-scrollbar__thumb'
     horizontalScrollTrack.className = 'shikitor-fold-scrollbar shikitor-fold-scrollbar--horizontal'
@@ -795,14 +803,8 @@ export default definePlugin({
       if (!visualOwnsHorizontalScroll && input.scrollLeft !== metrics.scrollTop) {
         input.scrollLeft = metrics.scrollTop
       }
-      output.scrollLeft = metrics.scrollTop
-      if (visualOwnsHorizontalScroll) {
-        target.style.setProperty('--shikitor-visual-scroll-l', `${metrics.scrollTop}px`)
-      } else {
-        target.style.removeProperty('--shikitor-visual-scroll-l')
-      }
-      target.style.setProperty('--shikitor-scroll-l', `${metrics.scrollTop}px`)
-      target.style.setProperty('--shikitor-offset-x', `-${metrics.scrollTop}px`)
+      setVisualScrollLeft(target, visualOwnsHorizontalScroll ? metrics.scrollTop : undefined)
+      setProjectionScroll(target, output, { left: metrics.scrollTop })
 
       horizontalScrollTrack.hidden = metrics.maxScrollTop === 0
       horizontalScrollThumb.style.width = `${metrics.thumbHeight}px`
@@ -847,10 +849,8 @@ export default definePlugin({
       // The creator's normal scroll synchronizer will therefore read this same
       // value instead of the textarea's full-source scrollHeight.
       if (input.scrollTop !== metrics.scrollTop) input.scrollTop = metrics.scrollTop
-      output.scrollTop = metrics.scrollTop
+      setProjectionScroll(target, output, { top: metrics.scrollTop })
       gutters.style.marginTop = `-${metrics.scrollTop}px`
-      target.style.setProperty('--shikitor-scroll-t', `${metrics.scrollTop}px`)
-      target.style.setProperty('--shikitor-offset-y', `-${metrics.scrollTop}px`)
 
       scrollTrack.hidden = metrics.maxScrollTop === 0
       scrollThumb.style.height = `${metrics.thumbHeight}px`
@@ -2232,7 +2232,7 @@ export default definePlugin({
       input.removeEventListener('focus', onSelectionChange)
       input.removeEventListener('blur', onSelectionChange)
       geometryLayer.dispose()
-      target.style.removeProperty('--shikitor-visual-scroll-l')
+      setVisualScrollLeft(target, undefined)
       target.classList.remove(
         'shikitor--code-folding',
         'shikitor--fold-rendering',

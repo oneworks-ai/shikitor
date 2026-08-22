@@ -29,5 +29,13 @@ export { setCursorGeometry } from './creator/controlled/cursorGeometry'
 export type { DocumentLines } from './creator/controlled/documentLines'
 export { createDocumentLines } from './creator/controlled/documentLines'
 export { createIncrementalHighlighter } from './creator/controlled/incrementalHighlighter'
+export {
+  applyProjectionScrollTo,
+  getProjectionScroll,
+  readVisualScrollLeft,
+  SCROLL_FOLLOWER_CLASS,
+  setProjectionScroll,
+  setVisualScrollLeft
+} from './creator/controlled/projectionScroll'
 export type { TokenizedLine, TokenSnapshot } from './creator/controlled/tokenSnapshot'
 export { tokenizedLineAt } from './creator/controlled/tokenSnapshot'
