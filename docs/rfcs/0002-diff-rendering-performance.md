@@ -145,7 +145,9 @@ from one copy reached a grammar from the other.
    lines rather than the document length.
 2. Keep the complete line DOM that projection plugins rely on, without
    rebuilding it on every keystroke.
-3. Split view original column cost bounded by the viewport.
+3. Split view original column cost bounded by the viewport, and current-side
+   token DOM bounded by the viewport even while folding and widgets are
+   active.
 4. One Shiki engine for both sides of the diff.
 5. Reproducible numbers: headless benchmark driver, profiler, and a working
    Pierre comparison.
@@ -153,9 +155,8 @@ from one copy reached a grammar from the other.
 ## Non-goals
 
 - Replacing the textarea or introducing a private document model.
-- Virtualizing the current-side line DOM while layout-changing plugins
-  (folding, widgets) are active; that needs the projection-island design
-  deferred by RFC 0001.
+- Replacing the per-line element contract plugins rely on; lazy
+  materialization keeps one element per line and virtualizes content only.
 - Changing the diff algorithm.
 
 ## Design
@@ -183,6 +184,35 @@ The full gutter keeps its elements and only appends or removes the
 line-count delta. Unchanged lines therefore keep their identity across
 keystrokes, plugin decorations on them survive, and mutation observers see
 only the changed lines.
+
+### Lazy line materialization (projection islands)
+
+Plugins that change layout (folding hides lines, widgets insert block rows)
+rely on one element per source line, but they do not need every element to
+carry token DOM. The projection therefore keeps a one-line placeholder
+(`data-shikitor-virtual`, a single space text node, same line box height)
+for every line and materializes token content only for the lines around
+the scrolled viewport plus overscan. The window follows the flow layout
+itself: visible (non-hidden) line elements are located by `offsetTop` with
+a binary search (`resolveMaterializationWindow`), so hidden lines and widget
+rows inserted by plugins are respected without a private layout model.
+The window is refreshed on scroll, resize, value/snapshot changes and
+whenever the line container's size changes (one `ResizeObserver`).
+Materializing a line dispatches `LINE_PATCH_EVENT`, so the diff view re-keys
+that line and code folding re-renders when the line carries fold DOM; lines
+leaving the window drop back to placeholders. Element count becomes
+O(lines + window × tokens): 6.9 k instead of 26.9 k at 1,000 lines, and the
+remaining style and layout work no longer grows with the document.
+
+Two pre-existing defects surfaced once scrolled editing was exercised and
+are fixed alongside: the line-widgets stylesheet made the output
+`overflow: visible` (so `scrollTop` could not scroll the projection while
+widgets were active) — the projection now follows the synchronized scroll
+offsets through a transform, and code folding measures the projection's
+layout size instead of `scrollHeight`; and the textarea's widget padding
+could exceed the editor height, letting the browser's caret reveal scroll
+the editor's clip boxes — the padding now covers only what the source text
+does not and never grows the textarea past its container.
 
 The edit path also stops forcing synchronous style and layout flushes:
 caret geometry measures one line box and adds `line × lineBox` instead of a
@@ -265,22 +295,48 @@ otherwise). "Before" values are the baseline medians from the section above.
 | | CodeMirror 6 MergeView | 72.4 ms | 56.0 ms | 16.6 ms | 17.8 ms | 15.5 ms | 834 |
 | | Pierre 1.3.1 editable diff | 2,496 ms | 1,365 ms | 16.7 ms | 463.1 ms | 16.6 ms | 60,359 |
 
-Edit-to-paint latency improved 22× (unified) and 11× (split) at 1,000 lines
-and 122× at 5,000 lines; warm mount improved 10× at 1,000 lines and 36× at
-5,000 lines, where the former implementation took 17 s to mount a second
-instance. The diff editor now also runs its syntax work on the Worker lane
-(`all-dom/worker`) like plain editors, because the token snapshot path is
-used instead of the main-thread `codeToHtml` fallback.
+Those rows measured the incremental projection with every line still
+carrying token DOM. With lazy line materialization (placeholders outside
+the viewport window), the scroll fixes and focused edits applied through the
+editing engine, the same harness gives:
 
-At 1,000 lines the remaining gap to the viewport-rendering editors is about
-two frames, and it is almost entirely browser style and layout work over the
-complete line projection (the 5,000-line case keeps ~285k elements; memory
-delta 125 MB vs 80–108 MB for Pierre and Monaco). Closing it requires
-virtualizing the current side while layout-changing plugins are active —
-the projection-island design RFC 0001 deferred — which is the natural next
-step and out of scope here. Cold mount at 1,000 lines is dominated by
-lazily loading the TypeScript grammar into the shared engine on the first
-instance (warm mount 88 ms); Pierre's cold mount includes its own Shiki
+| Configuration | Engine | Cold mount | Warm mount | Edit P50 | Edit P95 | Scroll | DOM elements | Memory Δ |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 lines, unified | **Shikitor diff (final)** | **214.0 ms** | **56.4 ms** | **16.7 ms** | **25.1 ms** | **24.8 ms** | **23,347** | **28.0 MB** |
+| | Monaco / CodeMirror / Pierre | 53.1 / 32.2 / 614.8 ms | 17.5 / 17.1 / 275.1 ms | 16.7 / 16.7 / 16.7 ms | 17.2 / 16.9 / 16.8 ms | 16.7 / 16.4 / 16.7 ms | 1,373 / 834 / 11,959 | 84.3 / 6.6 / 19.1 MB |
+| 1,000 lines, split | **Shikitor diff (final)** | **89.8 ms** | **53.8 ms** | **16.8 ms** | **33.1 ms** | **18.0 ms** | **8,208** | **23.6 MB** |
+| | Monaco / CodeMirror / Pierre | 53.6 / 29.9 / 653.3 ms | 16.4 / 16.7 / 333.4 ms | 16.7 / 16.7 / 16.7 ms | 17.2 / 16.7 / 16.9 ms | 16.6 / 16.6 / 16.3 ms | 642 / 753 / 21,286 | 83.6 / 6.2 / 22.2 MB |
+| 5,000 lines, unified | **Shikitor diff (final)** | **415.2 ms** | **273.9 ms** | **83.1 ms** | **202.8 ms** | **41.2 ms** | **176,938** | **91.8 MB** |
+| | Monaco / CodeMirror / Pierre | 83.6 / 74.7 / 2,511 ms | 17.4 / 55.8 / 1,356 ms | 16.7 / 16.6 / 16.7 ms | 34.5 / 16.7 / 444.5 ms | 16.5 / 16.7 / 16.1 ms | 4,543 / 834 / 60,359 | 104.6 / 10.4 / 66.3 MB |
+
+At 1,000 lines the diff editor now paints an edit in one frame in both
+views, the same as Monaco's DiffEditor, CodeMirror's MergeView and Pierre
+(edit P50 16.7 ms; the baseline was 727 ms unified and 358 ms split), with
+a warm mount of ~55 ms (baseline 859/540 ms) and 28 MB of application
+memory (Monaco 84 MB). At 5,000 lines the edit is 83 ms (baseline 19.4 s,
+234× faster; 159 ms before lazy materialization) and the warm mount 274 ms
+(baseline 17.2 s). The diff editor runs its syntax work on the Worker lane
+(`all-dom/worker`) like plain editors, because the token snapshot path is
+used instead of the main-thread `codeToHtml` fallback. DOM counts are taken
+after the benchmark's whole-document replacement, which turns a quarter of
+the lines into modified rows with removed-row widgets; each widget still
+clones a complete tokenized baseline line, which is where most of the
+5,000-line count comes from.
+
+What remains at 5,000 lines, per keystroke in the dev build (~100 ms):
+~43 ms of style recalculation and 13 ms of layout, and ~45 ms of JavaScript
+spread over the O(n) passes that still visit every line element (code
+folding's sweep, the diff view's line index, the widget anchor index, the
+materialization window's hidden-line scan, and the Myers diff over 5,000
+lines). The style work is dominated by root-level custom properties: the
+caret position variables (`--shikitor-cursor-t/l`) and the scroll offsets
+are inherited from the editor root, so each change restyles every
+descendant; they are a cross-package contract (`dsh-shikitor` reads and
+writes them), so they were left in place. Scoping those variables to the
+layers that consume them, and rendering removed-row widget content only
+inside the viewport window, are the next steps. Cold mount at 1,000 lines is
+dominated by lazily loading the TypeScript grammar into the shared engine on
+the first instance; Pierre's cold mount includes its own Shiki
 initialization.
 
 Raw JSON exports for every run (baseline and after) are produced by
@@ -291,18 +347,16 @@ Raw JSON exports for every run (baseline and after) are produced by
 ### Edit loop after the change
 
 CPU profile of the same dev-build edit loop as above (1,000 lines, 8
-keystrokes): edit P50 fell from ~800 ms to ~45 ms. What remains per
+keystrokes): edit P50 fell from ~800 ms to ~17 ms. What remains per
 keystroke, from the performance trace (`playground/scripts/trace-diff.mjs`):
-about 20 ms of style recalculation, 5 ms of layout, 2.5 ms of paint and
-~25 ms of JavaScript, of which the largest items are the line-widgets pass
-(~11 ms incl. the single forced layout flush it needs to measure widget
-heights), the code-folding sweep (~8 ms), the caret geometry measurement
-(~6 ms) and the diff view keying pass (~2 ms). `codeToHtml`,
-`output.innerHTML`, per-row `querySelector` and per-widget layout reads no
-longer appear. The textarea's own inner-editor rebuild for a programmatic
-`setRangeText` (Chrome re-inserts one text node and `<br>` per line) accounts
-for ~2,000 of the style-recalculated nodes per edit and is not paid by real
-typing.
+about 8.5 ms of style recalculation, 2 ms of layout, 2.5 ms of paint and
+~10 ms of JavaScript (the line-widgets pass with its single forced layout
+flush, the code-folding sweep, the caret geometry measurement and the diff
+view keying pass). `codeToHtml`, `output.innerHTML`, per-row
+`querySelector`, per-widget layout reads and the textarea's inner-editor
+rebuild no longer appear: a focused editor applies `setRangeText` through
+the browser's editing engine, so Chrome patches its internal text instead of
+re-inserting one text node and `<br>` per line.
 
 ## Acceptance criteria
 
@@ -313,8 +367,9 @@ typing.
   line patching, token equivalence, diff view windows, widget geometry and
   fold indexes.
 - Benchmark edit P50 for the 1,000-line diff improves by more than an order
-  of magnitude against the baseline above on the same machine, and DOM count
-  in split view no longer scales with the baseline length.
+  of magnitude against the baseline above on the same machine (achieved:
+  one frame), and DOM count no longer scales with the document length while
+  the viewport is stationary (token DOM is bounded by the viewport window).
 
 ## Risks and mitigations
 

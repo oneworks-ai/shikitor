@@ -61,9 +61,11 @@ both container-created and host-owned inputs.
 - `all-dom` uses ordinary token elements for every visible line, with an
   overscanned viewport instead of a document-sized token tree. Features that
   own projected line DOM keep a complete line projection until they support
-  virtual islands: plugins receive one element per source line that is
-  patched incrementally from the shared token snapshot (only changed lines
-  are replaced, the gutter keeps its elements), while decorations, exact-range
+  virtual islands: plugins receive one element per source line, but only
+  the lines around the scrolled viewport carry token content (the rest are
+  one-line placeholders marked `data-shikitor-virtual`), and edits patch
+  lines incrementally from the shared token snapshot (only changed lines are
+  replaced, the gutter keeps its elements). Decorations, exact-range
   highlights and inline replacements still use Shiki's serialized HTML
   renderer.
 
